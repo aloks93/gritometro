@@ -13,7 +13,7 @@ description: Modo Estudio oculto del Gritómetro - interfaz profesional de audio
 
 ## App independiente (Gritómetro Studio)
 - `npm run build:studio` → `dist-studio/Gritometro-Studio-<versión>-x64.exe` y `-portable.exe`. Misma base de código: las mejoras del estudio llegan a las dos apps.
-- Pide el **código de acceso** la primera vez en cada PC (se recuerda en `settings.studioUnlocked`, datos en `%APPDATA%\Gritometro Studio`). En el código solo está su SHA-256 (`core/studio/unlock.ts`); para cambiarlo, calcula el hash nuevo y actualiza el test.
+- Pide el **código de acceso** la primera vez en cada PC (se recuerda en `settings.studioUnlocked`, datos en `%APPDATA%\Gritometro Studio`). En el código solo está su SHA-256 (`core/studio/unlock.ts`); para cambiarlo, calcula el hash nuevo. **Nunca escribas el código en claro en el repo (es público)**: el test lo lee de `STUDIO_CODE` (`STUDIO_CODE=… npm test`).
 - Release aparte: etiqueta `studio-vX.Y.Z`, `gh release create ... --latest=false` para que la del cumpleaños siga siendo la «Latest».
 
 ## Código

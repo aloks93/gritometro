@@ -62,12 +62,19 @@ describe('report', () => {
 })
 
 describe('studio access code', () => {
-  it('accepts only the right code', async () => {
-    const { isValidStudioCode } = await import('./unlock')
-    expect(await isValidStudioCode('6153996')).toBe(true)
-    expect(await isValidStudioCode(' 615-3996 ')).toBe(true)
-    expect(await isValidStudioCode('6153997')).toBe(false)
+  // The real code never goes in the (public) repo: set STUDIO_CODE to check it locally
+  it('rejects wrong or malformed codes', async () => {
+    const { isValidStudioCode, sha256Hex } = await import('./unlock')
+    expect(await sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
+    expect(await isValidStudioCode('0000000')).toBe(false)
     expect(await isValidStudioCode('')).toBe(false)
     expect(await isValidStudioCode('abc')).toBe(false)
+  })
+
+  it.skipIf(!process.env.STUDIO_CODE)('accepts the configured code', async () => {
+    const { isValidStudioCode } = await import('./unlock')
+    const code = process.env.STUDIO_CODE!
+    expect(await isValidStudioCode(code)).toBe(true)
+    expect(await isValidStudioCode(` ${code.slice(0, 3)}-${code.slice(3)} `)).toBe(true)
   })
 })
