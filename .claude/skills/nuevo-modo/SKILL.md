@@ -15,7 +15,8 @@ Ejemplos: `modes/attempts.ts` (fábrica reutilizable "N intentos, vale el mejor"
    - `minPlayers`/`maxPlayers`; `usesTeams` si usa `ctx.teams`.
    - `turnKind`: `'scream'` (valor = puntos 0–100) o `'silence'` (valor = segundos).
    - `configFields` numéricos con `min`/`max` + `defaultConfig` (booleanos como 0/1).
-   - `nextTurn` devuelve `null` cuando el juego terminó; `label` opcional para el contexto ("Ronda 2").
+   - `nextTurn` devuelve `null` cuando el juego terminó; `label` opcional para el contexto ("Ronda 2"); `target` opcional para retos de precisión (la pantalla muestra la meta y quita el bonus por edad; ver `modes/target.ts`).
+   - `turnKind: 'sustain'` = grito más largo (valor en segundos, ver `modes/longest.ts`).
    - `applyResult` nunca muta: copia objetos/arrays.
    - `standings` ordenado del mejor al peor, con `display` legible.
    - `view` opcional (`ModeView`): reutiliza `bracket`, `tanks` o `duel`; si necesitas otro tipo, añádelo a `ModeView` y renderízalo en `ui/components/ModeViews.tsx`.

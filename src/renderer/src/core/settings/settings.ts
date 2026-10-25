@@ -31,7 +31,7 @@ export interface GameSettings {
 export function defaultGameSettings(): GameSettings {
   return {
     appMode: 'party',
-    birthdayName: '',
+    birthdayName: 'Luna',
     countdownSeconds: 3,
     screamSeconds: 3,
     silenceMaxSeconds: 30,

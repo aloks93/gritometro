@@ -9,6 +9,8 @@ export interface Turn {
   kind: TurnKind
   /** Context shown above the player, e.g. "Semifinal · Partido 1" */
   label?: string
+  /** Score to aim for (precision modes): closer is better, not louder */
+  target?: number
 }
 
 export interface TurnResult {

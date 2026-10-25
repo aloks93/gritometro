@@ -7,6 +7,8 @@ import { tournamentMode, buildFirstRound } from './modes/tournament'
 import { teamTankMode } from './modes/teamTank'
 import { silenceMode } from './modes/silence'
 import { longestMode } from './modes/longest'
+import { eliminationMode } from './modes/elimination'
+import { createTargetMode, targetMode } from './modes/target'
 import { gameModes } from './registry'
 
 function ctxOf(n: number, teams = 0): GameContext {
@@ -62,6 +64,59 @@ describe('longest scream', () => {
     const st = longestMode.standings(s, ctx)
     expect(st[0].id).toBe('p2')
     expect(st[0].display).toBe('12.3 s')
+  })
+})
+
+describe('elimination', () => {
+  it('drops the weakest scream each round until one is left', () => {
+    const ctx = ctxOf(4)
+    const { s, turns } = play(eliminationMode, ctx, {}, byPlayer)
+    // 4 + 3 + 2 screams
+    expect(turns).toBe(9)
+    const st = eliminationMode.standings(s, ctx)
+    expect(st.map((x) => x.id)).toEqual(['p4', 'p3', 'p2', 'p1'])
+    expect(st[0].display).toContain('Campeón')
+    expect(st[3].display).toContain('ronda 1')
+  })
+
+  it('replays a round when everybody ties', () => {
+    const ctx = ctxOf(3)
+    let s = eliminationMode.init(ctx, {})
+    for (const id of ['p1', 'p2', 'p3']) s = eliminationMode.applyResult(s, { playerId: id, value: 50 })
+    expect(s.alive).toHaveLength(3)
+    expect(s.round).toBe(2)
+  })
+
+  it('knocks out every player tied for last', () => {
+    const ctx = ctxOf(3)
+    let s = eliminationMode.init(ctx, {})
+    s = eliminationMode.applyResult(s, { playerId: 'p1', value: 40 })
+    s = eliminationMode.applyResult(s, { playerId: 'p2', value: 40 })
+    s = eliminationMode.applyResult(s, { playerId: 'p3', value: 70 })
+    expect(s.alive).toEqual(['p3'])
+    expect(eliminationMode.nextTurn(s)).toBeNull()
+  })
+})
+
+describe('target', () => {
+  it('ranks by closeness to the target, not by volume', () => {
+    const ctx = ctxOf(3)
+    const mode = createTargetMode(() => 0.5)
+    const s0 = mode.init(ctx, { rounds: 2, minTarget: 30, maxTarget: 80 })
+    expect(s0.targets.every((t) => t === 55)).toBe(true)
+    expect(mode.nextTurn(s0)?.target).toBe(55)
+    // p1 screams 10 (miss 45), p2 52 (miss 3), p3 95 (miss 40)
+    const scores: Record<string, number> = { p1: 10, p2: 52, p3: 95 }
+    const { s, turns } = play(mode, ctx, { rounds: 2, minTarget: 30, maxTarget: 80 }, (id) => scores[id])
+    expect(turns).toBe(6)
+    const st = mode.standings(s, ctx)
+    expect(st.map((x) => x.id)).toEqual(['p2', 'p3', 'p1'])
+    expect(st[0].display).toContain('3.0')
+  })
+
+  it('keeps targets inside the configured range', () => {
+    const s = targetMode.init(ctxOf(5), { rounds: 5, minTarget: 40, maxTarget: 60 })
+    expect(s.targets.every((t) => t >= 40 && t <= 60 && t % 5 === 0)).toBe(true)
   })
 })
 

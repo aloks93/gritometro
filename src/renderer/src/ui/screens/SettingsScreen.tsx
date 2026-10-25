@@ -30,7 +30,7 @@ export function SettingsScreen({ navigate }: { navigate: Navigate }): JSX.Elemen
       <div className="two-col">
         <Panel title="🎂 Cumpleañera">
           <Field label="Nombre" hint="Aparece en el inicio, el podio, los certificados y las fotos.">
-            <input value={s.birthdayName} maxLength={30} placeholder="p. ej. Sofi" onChange={(e) => set({ birthdayName: e.target.value })} />
+            <input value={s.birthdayName} maxLength={30} placeholder="p. ej. Luna" onChange={(e) => set({ birthdayName: e.target.value })} />
           </Field>
           <Field label="Años que cumple (opcional)">
             <input

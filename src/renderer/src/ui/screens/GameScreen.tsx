@@ -29,6 +29,12 @@ interface LastResult {
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
+function targetVerdict(score: number, target: number): string {
+  const diff = Math.round((score - target) * 10) / 10
+  if (Math.abs(diff) <= 1) return `🎯 ¡En el blanco! (meta ${target})`
+  return diff > 0 ? `Te pasaste por ${diff.toFixed(1)} (meta ${target})` : `Te faltaron ${(-diff).toFixed(1)} (meta ${target})`
+}
+
 export function GameScreen({ session, navigate }: { session: GameSession; navigate: Navigate }): JSX.Element {
   const { data, theme, update } = useStore()
   const sounds = useSounds()
@@ -55,7 +61,8 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
   const view = mode.view?.(state, ctx)
   const player = turn ? ctx.players.find((p) => p.id === turn.playerId) : undefined
   const team = turn?.teamId ? ctx.teams.find((t) => t.id === turn.teamId) : undefined
-  const multiplier = handicapFor(player?.age, settings.handicapRules, settings.handicapEnabled)
+  // Aiming at a target is about control, not power: no age bonus there
+  const multiplier = turn?.target !== undefined ? 1 : handicapFor(player?.age, settings.handicapRules, settings.handicapEnabled)
   const bestRecord = useMemo(() => Math.max(0, ...data.records.map((r) => r.score)), [data.records])
 
   // Track the best level reached during the active window
@@ -259,6 +266,11 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
                 {team && <div className="turn-team">{team.name}</div>}
                 {multiplier !== 1 && turn?.kind === 'scream' && <div className="chip">Bonus x{multiplier} por edad</div>}
               </div>
+              {turn?.target !== undefined && (
+                <div className="target-goal">
+                  <small>Meta</small>🎯 {turn.target}
+                </div>
+              )}
             </div>
           )}
 
@@ -315,7 +327,11 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
                     {last.score ? (
                       <>
                         <p className="result-score">{last.value.toFixed(1)}</p>
-                        <p className="result-level">{levelLabel(theme, last.value)}</p>
+                        {last.turn.target !== undefined ? (
+                          <p className="result-level">{targetVerdict(last.value, last.turn.target)}</p>
+                        ) : (
+                          <p className="result-level">{levelLabel(theme, last.value)}</p>
+                        )}
                         {settings.showDb && (
                           <p className="muted">
                             ≈ {Math.round(last.score.sustainedPeakDb + profile.splOffset)} dB · {Math.round(last.score.voicedRatio * 100)}% del

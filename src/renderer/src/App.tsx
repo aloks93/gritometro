@@ -15,6 +15,7 @@ import { PlayersScreen } from './ui/screens/PlayersScreen'
 import { RecordsScreen } from './ui/screens/RecordsScreen'
 import { SettingsScreen } from './ui/screens/SettingsScreen'
 import { StudioShell } from './ui/studio/StudioShell'
+import { ScreenErrorBoundary } from './ui/components/ScreenErrorBoundary'
 
 /** Publishes theme tokens as CSS variables: --c-<token>, --font-display, --font-body, --radius */
 function useThemeVars(theme: Theme): void {
@@ -114,7 +115,11 @@ function Shell(): JSX.Element {
   return (
     <div className={`app ${data.settings.projectorMode ? 'projector' : ''}`} data-theme={theme.id}>
       <AppBackground />
-      <div className="app-content">{screen}</div>
+      <div className="app-content">
+        <ScreenErrorBoundary key={route.name} onHome={() => navigate({ name: 'home' })}>
+          {screen}
+        </ScreenErrorBoundary>
+      </div>
     </div>
   )
 }

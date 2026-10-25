@@ -639,6 +639,32 @@ code.path {
   color: var(--team);
   font-weight: 900;
 }
+.crash-screen {
+  align-items: center;
+  justify-content: center;
+  gap: 1em;
+  text-align: center;
+}
+.target-goal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-left: 0.6em;
+  padding: 0.2em 0.8em;
+  border-left: 3px solid var(--c-accent);
+  font-family: var(--font-display);
+  font-size: 2.6em;
+  line-height: 1;
+  color: var(--c-accent);
+}
+.target-goal small {
+  font-family: var(--font-body);
+  font-size: 0.32em;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--c-textMuted);
+}
 .stage-center {
   display: flex;
   align-items: center;
