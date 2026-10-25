@@ -1,0 +1,21 @@
+appId: com.gritometro.app
+productName: Gritometro
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**/*
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: ${productName}-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: Gritometro
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}
