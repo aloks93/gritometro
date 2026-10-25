@@ -24,11 +24,15 @@ src/renderer/src/
   core/            NO React, NO themes. Pure, testable logic.
     audio/         AudioConfig (profiles, simple/advanced), LevelAnalyzer (RMS/dB/ballistics),
                    MicrophoneService (getUserMedia, channel split, gain), AudioEngine (singleton, rAF loop,
-                   PCM tap via pcmTap.worklet.js, monitoring, output device, scheduled output),
+                   PCM tap via pcmTap.worklet.js, monitoring, output device, scheduled output,
+                   setSourceOverride to analyse a mixer bus), MixerEngine (virtual mixer graph,
+                   stripGate.worklet.js, busTap.worklet.js),
                    Calibration (noise floor), ScoreEngine (scream score + SilenceWatcher)
     game/          GameMode contract, registry, modes/*
     players/       players, teams, avatars, age handicap
     settings/      game settings + defaults (appMode, birthdayName)
+    mixer/         pure mixer model: strips, buses, solo/mute, pan law, fader taper, EQ response,
+                   routing warnings, scenes, auto trim (MixerEngine.ts in audio/ builds the graph)
     studio/        pure studio DSP: analysis (third-octave, centroid, SNR, technicalScore, WAV 16/24/float
                    encode+decode), dsp (A/C/K weighting biquads, true peak, generators, findDelay),
                    loudness (EBU R128 LoudnessMeter, IEC SoundLevelMeter), pitch (YIN), report (PDF HTML),
@@ -37,6 +41,8 @@ src/renderer/src/
   ui/              React: store (persisted app state), hooks, sound, components/, screens/
   ui/studio/       Studio shell (own scoped CSS, does not use party themes): Monitor (meters, LUFS,
                    tuner, FFT/RTA/spectrogram, scope, headphone monitoring), Sonómetro, Grabadora,
+                   Mezclador (virtual console: strips with HPF/gate/EQ/comp/delay → A/B buses, scenes,
+                   stereo bus recording, auto trim; any bus can feed the analyzers),
                    Comparador (takes, synced A/B, blind test, difference curves, session/PDF),
                    Generador (signals + latency), playback.ts / recordings (in-memory audio, never persisted)
   App.tsx          router (Route union in ui/nav.ts), theme CSS vars, audio boot

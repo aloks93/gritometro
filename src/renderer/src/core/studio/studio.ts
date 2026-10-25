@@ -35,6 +35,8 @@ export interface StudioPrefs {
   monitorDb: number | null
   /** Output device for monitoring and the signal generator; null = system default */
   outputDeviceId: string | null
+  /** What the analyzers listen to: the profile's input, or a mixer bus id */
+  analysisSource: 'input' | string
 }
 
 export interface StudioData {
@@ -59,7 +61,8 @@ export function defaultStudioPrefs(): StudioPrefs {
     slmTime: 'F',
     loudnessTarget: -14,
     monitorDb: null,
-    outputDeviceId: null
+    outputDeviceId: null,
+    analysisSource: 'input'
   }
 }
 

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { audioEngine } from '../../core/audio/AudioEngine'
+import { mixerEngine } from '../../core/audio/MixerEngine'
 import { useEngineState } from '../hooks'
 import { AudioScreen } from '../screens/AudioScreen'
 import { api } from '../storage'
@@ -7,16 +8,18 @@ import { useStore } from '../store'
 import { CompareView } from './CompareView'
 import { generator } from './generator'
 import { GeneratorView } from './GeneratorView'
+import { MixerView, useMixerState } from './MixerView'
 import { MonitorView, useStudioPrefs } from './MonitorView'
 import { setPlaybackDevice, stopPlayback } from './playback'
 import { RecorderView } from './RecorderView'
 import { SlmView } from './SlmView'
 import './studio.css'
 
-type Tab = 'monitor' | 'slm' | 'recorder' | 'compare' | 'generator' | 'input'
+type Tab = 'monitor' | 'mixer' | 'slm' | 'recorder' | 'compare' | 'generator' | 'input'
 
 const TABS: [Tab, string][] = [
   ['monitor', 'Monitor'],
+  ['mixer', 'Mezclador'],
   ['slm', 'Sonómetro'],
   ['recorder', 'Grabadora'],
   ['compare', 'Comparador'],
@@ -28,7 +31,7 @@ const TABS: [Tab, string][] = [
 let lastTab: Tab = 'monitor'
 
 const SHORTCUTS: [string, string][] = [
-  ['Ctrl+1 … Ctrl+6', 'Cambiar de pestaña'],
+  ['Ctrl+1 … Ctrl+7', 'Cambiar de pestaña'],
   ['F11', 'Pantalla completa'],
   ['F · P', 'Monitor: fijar referencia · congelar analizador'],
   ['R · M', 'Grabadora: grabar/detener · marcador'],
@@ -38,15 +41,19 @@ const SHORTCUTS: [string, string][] = [
 
 /** Hidden professional interface: metering, recording, mic comparison and test signals */
 export function StudioShell({ standalone = false }: { standalone?: boolean }): JSX.Element {
-  const { update } = useStore()
+  const { data, update } = useStore()
+  const mixer = useMixerState()
   const engine = useEngineState()
   const [prefs, setPrefs] = useStudioPrefs()
   const [tab, setTabState] = useState<Tab>(lastTab)
   const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([])
   const [help, setHelp] = useState(false)
+  const main = useRef<HTMLElement>(null)
   const setTab = (t: Tab): void => {
     lastTab = t
     setTabState(t)
+    // Each tab starts at the top (the scroll container is shared)
+    if (main.current) main.current.scrollTop = 0
   }
 
   useEffect(() => {
@@ -57,6 +64,8 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
     return () => {
       document.title = previous
       audioEngine.setMonitor(null)
+      audioEngine.setSourceOverride(null)
+      mixerEngine.stop()
       generator.stop()
       stopPlayback()
     }
@@ -64,6 +73,16 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
   }, [])
 
   useEffect(() => audioEngine.setMonitor(prefs.monitorDb), [prefs.monitorDb])
+
+  // Every mixer edit goes live (parameters instantly, structure by rebuilding)
+  useEffect(() => mixerEngine.apply(data.mixer), [data.mixer])
+
+  // Analyzers follow the chosen source; a mixer rebuild hands out a new bus stream
+  const sourceBus = prefs.analysisSource !== 'input' && mixer.status === 'on' ? data.mixer.buses.find((b) => b.id === prefs.analysisSource) : undefined
+  useEffect(() => {
+    const stream = sourceBus ? mixerEngine.busStream(sourceBus.id) : null
+    audioEngine.setSourceOverride(stream && sourceBus ? { stream, label: `Bus ${sourceBus.label} · ${sourceBus.name}` } : null)
+  }, [sourceBus?.id, sourceBus?.label, sourceBus?.name, mixer.generation, mixer.status])
 
   // One output choice for monitoring, take playback and the generator
   useEffect(() => {
@@ -88,7 +107,7 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement
       const typing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
-      if (e.ctrlKey && !e.shiftKey && /^Digit[1-6]$/.test(e.code)) {
+      if (e.ctrlKey && !e.shiftKey && /^Digit[1-7]$/.test(e.code)) {
         e.preventDefault()
         setTab(TABS[Number(e.code.slice(5)) - 1][0])
       } else if (!typing && e.key === '?') {
@@ -129,13 +148,33 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
             onChange={(e) => setPrefs({ outputDeviceId: e.target.value || null })}
             title="Salida de audio para escucha, tomas y generador"
           >
-            <option value="">🔊 Salida predeterminada</option>
+            <option value="">🔊 Predeterminada</option>
             {outputs.map((o, i) => (
               <option key={o.deviceId} value={o.deviceId}>
                 🔊 {o.label || `Salida ${i + 1}`}
               </option>
             ))}
           </select>
+          {mixer.status === 'on' && (
+            <select
+              className="st-output"
+              value={sourceBus ? sourceBus.id : 'input'}
+              onChange={(e) => setPrefs({ analysisSource: e.target.value })}
+              title="Qué analizan el Monitor, el Sonómetro, la Grabadora y el Comparador"
+            >
+              <option value="input">🔍 Entrada del perfil</option>
+              {data.mixer.buses.map((b) => (
+                <option key={b.id} value={b.id}>
+                  🔍 Bus {b.label} · {b.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {mixer.status === 'on' && (
+            <button className="st-btn on st-mixer-on" onClick={() => setTab('mixer')} title="El mezclador está encendido">
+              MIX
+            </button>
+          )}
           {prefs.monitorDb !== null && (
             <button className="st-btn on" onClick={() => setPrefs({ monitorDb: null })} title="Escucha de entrada activa: clic para cortar">
               🎧 {prefs.monitorDb} dB
@@ -157,8 +196,9 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
           )}
         </div>
       </header>
-      <main className="st-main">
+      <main className="st-main" ref={main}>
         {tab === 'monitor' && <MonitorView />}
+        {tab === 'mixer' && <MixerView />}
         {tab === 'slm' && <SlmView />}
         {tab === 'recorder' && <RecorderView />}
         {tab === 'compare' && <CompareView />}

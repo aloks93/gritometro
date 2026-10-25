@@ -1,6 +1,6 @@
 import type { AudioProfile } from './AudioConfig'
 import { analyzeFrame, MIN_DB, type LevelReading } from './LevelAnalyzer'
-import { openInput, type OpenInput } from './MicrophoneService'
+import { openInput, type ExternalSource, type OpenInput } from './MicrophoneService'
 // no-inline: the CSP blocks data: URLs for worklet modules
 import tapModuleUrl from './pcmTap.worklet.js?url&no-inline'
 
@@ -51,6 +51,7 @@ class AudioEngine {
   private monitorNode: GainNode | null = null
   private outputDeviceId: string | null = null
   private spectrumSmoothing = 0.5
+  private override: ExternalSource | null = null
   last: LevelReading | null = null
 
   get state(): EngineState {
@@ -62,17 +63,33 @@ class AudioEngine {
     this.stateListeners.forEach((l) => l(s))
   }
 
-  async start(profile: AudioProfile): Promise<void> {
+  /**
+   * Analyse an external stream (a mixer bus) instead of the profile's device. Gain and
+   * ballistics still come from the profile. null = back to the device.
+   */
+  setSourceOverride(src: ExternalSource | null): void {
+    if (src?.stream === this.override?.stream && src?.label === this.override?.label) return
+    this.override = src
+    if (this.profile) void this.start(this.profile)
+  }
+
+  get sourceOverride(): ExternalSource | null {
+    return this.override
+  }
+
+  /** `ignoreOverride`: open the profile's device even while a bus is being analysed */
+  async start(profile: AudioProfile, opts: { ignoreOverride?: boolean } = {}): Promise<void> {
     this.stop()
     const seq = this.seq
     this.profile = profile
     this.setState({ status: 'starting' })
     try {
+      const external = opts.ignoreOverride ? undefined : (this.override ?? undefined)
       const input = await openInput(profile, () => {
         if (this.input !== input) return
         this.stopLoop()
         this.setState({ status: 'disconnected', error: 'El micrófono se desconectó.' })
-      })
+      }, external)
       // A newer start/stop happened while the device was opening: drop this one
       if (seq !== this.seq) {
         input.close()

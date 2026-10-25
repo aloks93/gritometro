@@ -77,7 +77,8 @@ export function CompareView(): JSX.Element {
     const base = activeProfile(data.audio)
     try {
       setPhase({ id: c.id, step: 'switching', remaining: 0 })
-      await audioEngine.start({ ...base, deviceId: c.deviceId, channel: c.channel, gainDb: c.gainDb, disableProcessing: true, ballistics: 'fast', gateDb: -120 })
+      // Each candidate is its own device, even while a mixer bus is being analysed
+      await audioEngine.start({ ...base, deviceId: c.deviceId, channel: c.channel, gainDb: c.gainDb, disableProcessing: true, ballistics: 'fast', gateDb: -120 }, { ignoreOverride: true })
       if (audioEngine.state.status !== 'running') throw new Error(audioEngine.state.error ?? 'No se pudo abrir el micrófono.')
       await wait(700)
 

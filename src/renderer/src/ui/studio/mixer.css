@@ -1,0 +1,459 @@
+/* Virtual mixer console (studio). Uses the studio tokens from studio.css. */
+.st-mixer {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+}
+.st-warnings {
+  margin: 0;
+  padding: 0.5em 0.8em;
+  list-style: none;
+  background: rgba(255, 138, 61, 0.08);
+  border: 1px solid rgba(255, 138, 61, 0.35);
+  border-radius: 4px;
+  color: var(--st-warn);
+  font-size: 0.85em;
+}
+.st-console {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 0.6em;
+  background: #0a0c0f;
+  border: 1px solid var(--st-border);
+  border-radius: 6px;
+}
+.st-console-sep {
+  width: 2px;
+  flex-shrink: 0;
+  background: var(--st-border);
+  margin: 0 6px;
+}
+.st-strip {
+  --strip: var(--st-accent);
+  flex: 0 0 124px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  background: linear-gradient(#191c22, #121418);
+  border: 1px solid var(--st-border);
+  border-top: 3px solid var(--strip);
+  border-radius: 5px;
+  font-size: 11px;
+}
+.st-strip.sel {
+  border-color: var(--strip);
+  box-shadow: 0 0 0 1px var(--strip) inset;
+}
+.st-strip.muted .st-vmeter {
+  opacity: 0.4;
+}
+.st-strip select,
+.st-strip input:not([type='range']) {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px !important;
+  padding: 3px 4px !important;
+}
+.st-strip-top {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.st-strip-name {
+  font-weight: 600;
+  text-align: center;
+  font-family: var(--font-body) !important;
+}
+.st-x {
+  background: none;
+  border: none;
+  color: var(--st-muted);
+  cursor: pointer;
+  font-size: 15px;
+  padding: 0 2px;
+}
+.st-x:hover {
+  color: var(--st-bad);
+}
+.st-strip-err {
+  color: var(--st-bad);
+  font-size: 10px;
+}
+.st-knob {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  position: relative;
+  color: var(--st-muted);
+}
+.st-knob span {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--st-mono);
+  font-size: 10px;
+}
+.st-knob b {
+  color: var(--st-text);
+  font-weight: 500;
+}
+.st-knob input[type='range'] {
+  min-width: 0;
+  width: 100%;
+  height: 14px;
+}
+.st-clip {
+  position: absolute;
+  right: 0;
+  top: -1px;
+  font: normal 8px var(--st-mono);
+  color: #5a2a32;
+  background: #2a1418;
+  padding: 0 3px;
+  border-radius: 2px;
+}
+.st-clip.on {
+  color: #fff;
+  background: var(--st-bad);
+}
+.st-fx-row,
+.st-sends,
+.st-ms {
+  display: flex;
+  gap: 3px;
+}
+.st-fx-row button,
+.st-sends button,
+.st-ms button {
+  flex: 1;
+  min-width: 0;
+  background: #0f1115;
+  border: 1px solid var(--st-border);
+  color: var(--st-muted);
+  border-radius: 3px;
+  font: 600 10px var(--st-mono);
+  padding: 4px 0;
+  cursor: pointer;
+}
+.st-fx-row button.on {
+  color: #111;
+  background: var(--strip, var(--st-accent));
+  border-color: var(--strip, var(--st-accent));
+}
+.st-fx-row button small {
+  font-weight: 400;
+}
+.st-fx-row button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.st-gate i,
+.st-gate-led {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #333;
+  vertical-align: middle;
+}
+.st-gate i.open,
+.st-gate-led.open {
+  background: var(--st-ok);
+  box-shadow: 0 0 5px var(--st-ok);
+}
+.st-gate-led {
+  width: 10px;
+  height: 10px;
+}
+.st-sends button.on.out {
+  background: #3fb6ff;
+  border-color: #3fb6ff;
+  color: #111;
+}
+.st-sends button.on.internal {
+  background: #5ee08a;
+  border-color: #5ee08a;
+  color: #111;
+}
+.st-ms button.mute.on {
+  background: var(--st-bad);
+  border-color: var(--st-bad);
+  color: #fff;
+}
+.st-ms button.solo.on {
+  background: #ffd84d;
+  border-color: #ffd84d;
+  color: #111;
+}
+.st-strip-body {
+  display: flex;
+  gap: 4px;
+  height: 210px;
+  justify-content: center;
+}
+.st-vmeter {
+  display: flex;
+  gap: 2px;
+}
+.st-vmeter-ch {
+  position: relative;
+  width: 7px;
+  background: #07080a;
+  border-radius: 1px;
+  overflow: hidden;
+}
+.st-vmeter-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: bottom;
+  transform: scaleY(0);
+  background: linear-gradient(to top, #2fbf6a 0%, #4ade80 70%, #ffd84d 70%, #ffd84d 90%, #ff4d5e 90%);
+}
+.st-vmeter-hold {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  bottom: 0;
+  background: #fff;
+}
+.st-vmeter-hold.clip {
+  background: var(--st-bad);
+}
+.st-fader {
+  position: relative;
+  width: 48px;
+  display: flex;
+  justify-content: center;
+}
+.st-fader input[type='range'] {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 24px;
+  height: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.st-fader-scale {
+  position: absolute;
+  right: -2px;
+  top: 6px;
+  bottom: 6px;
+  width: 14px;
+  pointer-events: none;
+}
+.st-fader-scale i {
+  position: absolute;
+  right: 0;
+  transform: translateY(50%);
+  font: normal 8px var(--st-mono);
+  color: var(--st-muted);
+}
+.st-grbar {
+  position: relative;
+  width: 5px;
+  background: #07080a;
+  border-radius: 1px;
+  overflow: hidden;
+}
+.st-grbar i {
+  position: absolute;
+  inset: 0;
+  transform-origin: top;
+  transform: scaleY(0);
+  background: var(--st-warn);
+}
+.st-strip-db {
+  text-align: center;
+  font: 11px var(--st-mono);
+  color: var(--st-text);
+}
+.st-bus {
+  border-top-color: #3fb6ff;
+  background: linear-gradient(#171b22, #101317);
+}
+.st-bus.internal {
+  border-top-color: #5ee08a;
+}
+.st-bus-label {
+  font: 700 12px var(--st-mono);
+  color: #3fb6ff;
+}
+.st-bus.internal .st-bus-label {
+  color: #5ee08a;
+}
+.st-bus-kind {
+  text-align: center;
+  color: var(--st-muted);
+  padding: 4px 0;
+}
+.st-bus-gr {
+  height: 12px;
+  text-align: center;
+  font: 10px var(--st-mono);
+  color: var(--st-warn);
+}
+.st-bus .st-fx-row button.on {
+  background: #3fb6ff;
+  border-color: #3fb6ff;
+}
+.st-bus.internal .st-fx-row button.on {
+  background: #5ee08a;
+  border-color: #5ee08a;
+}
+.st-recbtn {
+  white-space: nowrap;
+}
+.st-fx-row .st-recbtn.on {
+  font-size: 9px;
+  background: var(--st-bad) !important;
+  border-color: var(--st-bad) !important;
+  color: #fff;
+  animation: st-blink 1s steps(2) infinite;
+}
+
+/* strip editor */
+.st-editor {
+  border-top: 3px solid var(--strip);
+}
+.st-editor-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 1em;
+}
+.st-editor-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  min-width: 0;
+}
+.st-box-title {
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--st-muted);
+}
+.st-eq {
+  width: 100%;
+  aspect-ratio: 560 / 200;
+  background: #0b0d10;
+  border: 1px solid var(--st-border);
+  border-radius: 4px;
+  touch-action: none;
+}
+.st-eq .grid,
+.st-curve .grid {
+  stroke: var(--st-grid);
+  stroke-width: 1;
+}
+.st-eq .zero,
+.st-curve .zero {
+  stroke: #3a414d;
+  stroke-width: 1;
+}
+.st-eq text {
+  fill: var(--st-muted);
+  font: 9px var(--st-mono);
+}
+.st-eq .fill {
+  fill: var(--strip);
+  opacity: 0.15;
+}
+.st-eq .curve,
+.st-curve .curve {
+  fill: none;
+  stroke: var(--strip);
+  stroke-width: 2;
+}
+.st-eq .handle {
+  cursor: grab;
+}
+.st-eq .handle circle {
+  fill: #1b1f26;
+  stroke: var(--strip);
+  stroke-width: 2;
+}
+.st-eq .handle.sel circle {
+  fill: var(--strip);
+}
+.st-eq .handle text {
+  fill: var(--st-text);
+  font: 700 10px var(--st-mono);
+  pointer-events: none;
+}
+.st-eq .handle.sel text {
+  fill: #111;
+}
+.st-bands-edit {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.st-band {
+  background: #0f1115;
+  border: 1px solid var(--st-border);
+  border-radius: 4px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.st-band.sel {
+  border-color: var(--strip);
+}
+.st-band select {
+  font-size: 11px !important;
+  padding: 2px !important;
+}
+.st-num {
+  display: grid;
+  grid-template-columns: 62px 1fr 58px 22px;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--st-muted);
+}
+.st-band .st-num {
+  grid-template-columns: 30px 1fr;
+}
+.st-band .st-num input[type='range'],
+.st-band .st-num i {
+  display: none;
+}
+.st-num input[type='range'] {
+  min-width: 0;
+  width: 100%;
+}
+.studio .st-num input[type='number'] {
+  width: 100%;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.st-num i {
+  font-style: normal;
+  font-size: 10px;
+}
+.st-comp {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.st-curve {
+  width: 130px;
+  height: 130px;
+  background: #0b0d10;
+  border: 1px solid var(--st-border);
+  border-radius: 4px;
+}
+.st-comp-params {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+@media (max-width: 1200px) {
+  .st-editor-grid {
+    grid-template-columns: 1fr;
+  }
+}

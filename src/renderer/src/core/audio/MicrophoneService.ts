@@ -40,7 +40,13 @@ export async function listInputs(): Promise<InputDevice[]> {
     }))
 }
 
-export async function openInput(profile: AudioProfile, onEnded: () => void): Promise<OpenInput> {
+/** A stream owned by someone else (e.g. a mixer bus) to analyse instead of a device */
+export interface ExternalSource {
+  stream: MediaStream
+  label: string
+}
+
+export async function openInput(profile: AudioProfile, onEnded: () => void, external?: ExternalSource): Promise<OpenInput> {
   const processing = !profile.disableProcessing
   const constraints: MediaTrackConstraints = {
     echoCancellation: processing,
@@ -52,12 +58,12 @@ export async function openInput(profile: AudioProfile, onEnded: () => void): Pro
   if (profile.deviceId && profile.deviceId !== 'default') constraints.deviceId = { exact: profile.deviceId }
   if (profile.sampleRate) constraints.sampleRate = { ideal: profile.sampleRate }
 
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false })
+  const stream = external?.stream ?? (await navigator.mediaDevices.getUserMedia({ audio: constraints, video: false }))
   const track = stream.getAudioTracks()[0]
   const settings = track.getSettings()
 
   const contextOptions: AudioContextOptions = { latencyHint: profile.latency }
-  if (profile.sampleRate) contextOptions.sampleRate = profile.sampleRate
+  if (profile.sampleRate && !external) contextOptions.sampleRate = profile.sampleRate
   const context = new AudioContext(contextOptions)
   const source = context.createMediaStreamSource(stream)
   const channelCount = settings.channelCount ?? source.channelCount ?? 1
@@ -75,7 +81,7 @@ export async function openInput(profile: AudioProfile, onEnded: () => void): Pro
   spectrumAnalyser.minDecibels = -120
   spectrumAnalyser.maxDecibels = 0
 
-  if (typeof profile.channel === 'number' && channelCount > 1) {
+  if (!external && typeof profile.channel === 'number' && channelCount > 1) {
     const splitter = context.createChannelSplitter(channelCount)
     source.connect(splitter)
     splitter.connect(gain, Math.min(profile.channel, channelCount - 1))
@@ -96,10 +102,11 @@ export async function openInput(profile: AudioProfile, onEnded: () => void): Pro
     stream,
     channelCount,
     sampleRate: context.sampleRate,
-    label: track.label,
+    label: external?.label ?? track.label,
     close: () => {
       track.removeEventListener('ended', handleEnded)
-      stream.getTracks().forEach((t) => t.stop())
+      // An external stream belongs to its owner: only stop tracks we opened
+      if (!external) stream.getTracks().forEach((t) => t.stop())
       context.close().catch(() => undefined)
     }
   }

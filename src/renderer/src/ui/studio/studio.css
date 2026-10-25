@@ -610,7 +610,28 @@
   font-size: 1.45em;
 }
 .st-output {
-  max-width: 230px;
+  max-width: 150px;
+  text-overflow: ellipsis;
+}
+.st-topbar {
+  gap: 1em;
+  min-width: 0;
+}
+.st-tabs {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.st-tabs button {
+  white-space: nowrap;
+  padding: 0 0.65em;
+}
+.st-top-right {
+  flex-shrink: 0;
+  gap: 0.4em;
+}
+.st-mixer-on {
+  font: 700 11px var(--st-mono);
 }
 kbd {
   font-family: var(--st-mono);

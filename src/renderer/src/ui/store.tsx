@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { defaultAudioSettings, type AudioSettings } from '../core/audio/AudioConfig'
 import type { Player } from '../core/players/players'
 import { defaultGameSettings, type GameSettings } from '../core/settings/settings'
+import { mergeMixer, type MixerConfig } from '../core/mixer/mixer'
 import { mergeStudio, type StudioData } from '../core/studio/studio'
 import type { CustomTheme, Theme } from '../themes/Theme'
 import { DEFAULT_THEME_ID, resolveTheme } from '../themes/registry'
@@ -26,6 +27,7 @@ export interface AppData {
   customThemes: CustomTheme[]
   themeId: string
   studio: StudioData
+  mixer: MixerConfig
 }
 
 const KEYS: Record<keyof AppData, string> = {
@@ -35,7 +37,8 @@ const KEYS: Record<keyof AppData, string> = {
   records: 'records',
   customThemes: 'custom-themes',
   themeId: 'theme',
-  studio: 'studio'
+  studio: 'studio',
+  mixer: 'mixer'
 }
 
 type Updater<T> = T | ((prev: T) => T)
@@ -49,14 +52,15 @@ interface Store {
 const StoreContext = createContext<Store | null>(null)
 
 async function loadAll(): Promise<AppData> {
-  const [settings, audio, players, records, customThemes, themeId, studio] = await Promise.all([
+  const [settings, audio, players, records, customThemes, themeId, studio, mixer] = await Promise.all([
     load<Partial<GameSettings>>(KEYS.settings, {}),
     load<AudioSettings | null>(KEYS.audio, null),
     load<Player[]>(KEYS.players, []),
     load<RecordEntry[]>(KEYS.records, []),
     load<CustomTheme[]>(KEYS.customThemes, []),
     load<string>(KEYS.themeId, DEFAULT_THEME_ID),
-    load<Partial<StudioData>>(KEYS.studio, {})
+    load<Partial<StudioData>>(KEYS.studio, {}),
+    load<Partial<MixerConfig> | null>(KEYS.mixer, null)
   ])
   // Merge with defaults so settings added in newer versions get sane values
   const audioSettings = audio && audio.profiles?.length ? { ...defaultAudioSettings(), ...audio } : defaultAudioSettings()
@@ -67,7 +71,8 @@ async function loadAll(): Promise<AppData> {
     records,
     customThemes,
     themeId,
-    studio: mergeStudio(studio)
+    studio: mergeStudio(studio),
+    mixer: mergeMixer(mixer)
   }
 }
 

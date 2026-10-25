@@ -11,6 +11,7 @@ import {
   detectHum,
   dominantFrequency,
   encodeWav,
+  encodeWavChannels,
   envelope,
   matchGain,
   noteName,
@@ -199,5 +200,17 @@ describe('extended take analysis', () => {
       back.pcm.forEach((v, i) => expect(v).toBeCloseTo(x[i], 3))
     }
     expect(decodeWav(new ArrayBuffer(10))).toBeNull()
+  })
+})
+
+describe('stereo WAV', () => {
+  it('interleaves channels; decode returns the left one', () => {
+    const l = new Float32Array([0.5, -0.5, 0.25])
+    const r = new Float32Array([-1, 1, 0])
+    const buf = encodeWavChannels([l, r], SR, 24)
+    expect(new DataView(buf).getUint16(22, true)).toBe(2)
+    expect(buf.byteLength).toBe(44 + 3 * 2 * 3)
+    const back = decodeWav(buf)!
+    back.pcm.forEach((v, i) => expect(v).toBeCloseTo(l[i], 3))
   })
 })

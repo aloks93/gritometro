@@ -400,37 +400,48 @@ export type WavFormat = 16 | 24 | 'float'
 
 /** Mono WAV: 16/24-bit integer PCM or 32-bit float */
 export function encodeWav(pcm: Float32Array, sampleRate: number, format: WavFormat = 16): ArrayBuffer {
+  return encodeWavChannels([pcm], sampleRate, format)
+}
+
+/** Interleaved multichannel WAV (e.g. [left, right] from a mixer bus) */
+export function encodeWavChannels(channels: Float32Array[], sampleRate: number, format: WavFormat = 16): ArrayBuffer {
+  const nch = Math.max(1, channels.length)
+  const frames = Math.min(...channels.map((c) => c.length))
   const bytes = format === 16 ? 2 : format === 24 ? 3 : 4
-  const buffer = new ArrayBuffer(44 + pcm.length * bytes)
+  const block = bytes * nch
+  const buffer = new ArrayBuffer(44 + frames * block)
   const v = new DataView(buffer)
   const str = (o: number, s: string): void => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)))
   str(0, 'RIFF')
-  v.setUint32(4, 36 + pcm.length * bytes, true)
+  v.setUint32(4, 36 + frames * block, true)
   str(8, 'WAVE')
   str(12, 'fmt ')
   v.setUint32(16, 16, true)
   v.setUint16(20, format === 'float' ? 3 : 1, true) // 1 = PCM, 3 = IEEE float
-  v.setUint16(22, 1, true) // mono
+  v.setUint16(22, nch, true)
   v.setUint32(24, sampleRate, true)
-  v.setUint32(28, sampleRate * bytes, true)
-  v.setUint16(32, bytes, true)
+  v.setUint32(28, sampleRate * block, true)
+  v.setUint16(32, block, true)
   v.setUint16(34, bytes * 8, true)
   str(36, 'data')
-  v.setUint32(40, pcm.length * bytes, true)
-  for (let i = 0; i < pcm.length; i++) {
-    const o = 44 + i * bytes
-    if (format === 'float') {
-      v.setFloat32(o, pcm[i], true)
-      continue
-    }
-    const s = Math.max(-1, Math.min(1, pcm[i]))
-    if (format === 16) {
-      v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true)
-    } else {
-      const int = Math.round(s < 0 ? s * 0x800000 : s * 0x7fffff)
-      v.setUint8(o, int & 0xff)
-      v.setUint8(o + 1, (int >> 8) & 0xff)
-      v.setUint8(o + 2, (int >> 16) & 0xff)
+  v.setUint32(40, frames * block, true)
+  for (let i = 0; i < frames; i++) {
+    for (let c = 0; c < nch; c++) {
+      const o = 44 + i * block + c * bytes
+      const x = channels[c][i]
+      if (format === 'float') {
+        v.setFloat32(o, x, true)
+        continue
+      }
+      const s = Math.max(-1, Math.min(1, x))
+      if (format === 16) {
+        v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+      } else {
+        const int = Math.round(s < 0 ? s * 0x800000 : s * 0x7fffff)
+        v.setUint8(o, int & 0xff)
+        v.setUint8(o + 1, (int >> 8) & 0xff)
+        v.setUint8(o + 2, (int >> 16) & 0xff)
+      }
     }
   }
   return buffer

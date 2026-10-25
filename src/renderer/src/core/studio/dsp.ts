@@ -309,3 +309,79 @@ export function summarizeLatency(values: number[]): { medianMs: number; minMs: n
   const r = (x: number): number => Math.round(x * 10) / 10
   return { medianMs: r(median), minMs: r(v[0]), maxMs: r(v[v.length - 1]), jitterMs: r(v[v.length - 1] - v[0]) }
 }
+
+// ---- RBJ cookbook filters with the exact conventions of Web Audio's BiquadFilterNode,
+// so curves drawn from these match what the mixer's nodes actually do.
+
+function normalize(b0: number, b1: number, b2: number, a0: number, a1: number, a2: number): Biquad {
+  return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 }
+}
+
+/** Peaking EQ band (Q linear, as Web Audio's "peaking") */
+export function peaking(hz: number, gainDb: number, q: number, sampleRate: number): Biquad {
+  const A = Math.pow(10, gainDb / 40)
+  const w = (2 * Math.PI * hz) / sampleRate
+  const alpha = Math.sin(w) / (2 * q)
+  const cos = Math.cos(w)
+  return normalize(1 + alpha * A, -2 * cos, 1 - alpha * A, 1 + alpha / A, -2 * cos, 1 - alpha / A)
+}
+
+/** Low shelf with slope 1 (Web Audio's "lowshelf" ignores Q) */
+export function lowShelf(hz: number, gainDb: number, sampleRate: number): Biquad {
+  const A = Math.pow(10, gainDb / 40)
+  const w = (2 * Math.PI * hz) / sampleRate
+  const cos = Math.cos(w)
+  const k = 2 * Math.sqrt(A) * (Math.sin(w) / 2) * Math.SQRT2
+  return normalize(
+    A * (A + 1 - (A - 1) * cos + k),
+    2 * A * (A - 1 - (A + 1) * cos),
+    A * (A + 1 - (A - 1) * cos - k),
+    A + 1 + (A - 1) * cos + k,
+    -2 * (A - 1 + (A + 1) * cos),
+    A + 1 + (A - 1) * cos - k
+  )
+}
+
+/** High shelf with slope 1 (Web Audio's "highshelf") */
+export function highShelf(hz: number, gainDb: number, sampleRate: number): Biquad {
+  const A = Math.pow(10, gainDb / 40)
+  const w = (2 * Math.PI * hz) / sampleRate
+  const cos = Math.cos(w)
+  const k = 2 * Math.sqrt(A) * (Math.sin(w) / 2) * Math.SQRT2
+  return normalize(
+    A * (A + 1 + (A - 1) * cos + k),
+    -2 * A * (A - 1 + (A + 1) * cos),
+    A * (A + 1 + (A - 1) * cos - k),
+    A + 1 - (A - 1) * cos + k,
+    2 * (A - 1 - (A + 1) * cos),
+    A + 1 - (A - 1) * cos - k
+  )
+}
+
+/** Second-order low-pass (Q linear) */
+export function lowPass(hz: number, sampleRate: number, q = Math.SQRT1_2): Biquad {
+  const w = (2 * Math.PI * hz) / sampleRate
+  const alpha = Math.sin(w) / (2 * q)
+  const cos = Math.cos(w)
+  return normalize((1 - cos) / 2, 1 - cos, (1 - cos) / 2, 1 + alpha, -2 * cos, 1 - alpha)
+}
+
+/**
+ * Static curve of a soft-knee compressor: output level for an input level (dB).
+ * Same shape as DynamicsCompressorNode's knee, used to draw the transfer graph.
+ */
+export function compressorCurve(inDb: number, thresholdDb: number, ratio: number, kneeDb: number): number {
+  const over = inDb - thresholdDb
+  if (kneeDb > 0 && Math.abs(over) <= kneeDb / 2) {
+    return inDb + ((1 / ratio - 1) * (over + kneeDb / 2) ** 2) / (2 * kneeDb)
+  }
+  return over <= 0 ? inDb : thresholdDb + over / ratio
+}
+
+/**
+ * Makeup gain that Web Audio's DynamicsCompressorNode adds on its own
+ * (spec: (1 / full-range gain)^0.6). The mixer subtracts it so makeup stays explicit.
+ */
+export function compressorAutoMakeupDb(thresholdDb: number, ratio: number, kneeDb: number): number {
+  return -0.6 * compressorCurve(0, thresholdDb, ratio, kneeDb)
+}
