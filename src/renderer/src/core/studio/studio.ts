@@ -16,7 +16,7 @@ export interface MicCandidate {
   notes?: string
 }
 
-export type SpectrumMode = 'fft' | 'rta' | 'spectrogram'
+export type SpectrumMode = 'fft' | 'rta' | 'spectrogram' | 'waterfall'
 
 /** Studio view preferences, remembered between sessions */
 export interface StudioPrefs {

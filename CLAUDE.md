@@ -36,7 +36,8 @@ src/renderer/src/
     studio/        pure studio DSP: analysis (third-octave, centroid, SNR, technicalScore, WAV 16/24/float
                    encode+decode), dsp (A/C/K weighting biquads, true peak, generators, findDelay),
                    loudness (EBU R128 LoudnessMeter, IEC SoundLevelMeter), pitch (YIN), report (PDF HTML),
-                   studio (StudioData + prefs, session files)
+                   studio (StudioData + prefs, session files), distortion (FFT, THD/THD+N), stereo (phase
+                   correlation, channel offset, goniometer), acoustics (RT60 Schroeder), feedback (howl detector)
   themes/          Theme contract, registry, one folder per theme
   ui/              React: store (persisted app state), hooks, sound, components/, screens/
   ui/studio/       Studio shell (own scoped CSS, does not use party themes): Monitor (meters, LUFS,
@@ -46,7 +47,8 @@ src/renderer/src/
                    user presets, scenes,
                    stereo bus recording, auto trim; any bus can feed the analyzers),
                    Comparador (takes, synced A/B, blind test, difference curves, session/PDF),
-                   Generador (signals + latency), playback.ts / recordings (in-memory audio, never persisted)
+                   Laboratorio (THD+N, phase/goniometer + mic alignment, room RT60), Generador (signals +
+                   latency), playback.ts / recordings (in-memory audio, never persisted)
   App.tsx          router (Route union in ui/nav.ts), theme CSS vars, audio boot
 ```
 

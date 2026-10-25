@@ -114,7 +114,8 @@ export function MonitorView(): JSX.Element {
               options={[
                 ['fft', 'FFT'],
                 ['rta', 'RTA 1/3 oct.'],
-                ['spectrogram', 'Espectrograma']
+                ['spectrogram', 'Espectrograma'],
+                ['waterfall', 'Cascada 3D']
               ]}
             />
           </header>
@@ -159,6 +160,7 @@ export function MonitorView(): JSX.Element {
             {prefs.spectrumMode === 'fft' && 'FFT 8192 · naranja = retención de picos · pasa el ratón para leer frecuencia y nivel. Si hay acople, la frecuencia dominante dice qué banda recortar.'}
             {prefs.spectrumMode === 'rta' && 'Analizador en tercios de octava (energía por banda). Con ruido rosa del generador, una sala/altavoz neutro se ve plano.'}
             {prefs.spectrumMode === 'spectrogram' && 'Espectrograma: tiempo de derecha a izquierda, frecuencia en vertical, color = nivel. Útil para ver sibilancias, zumbidos y acoples.'}
+            {prefs.spectrumMode === 'waterfall' && 'Cascada (waterfall): los últimos 2 s de espectros apilados, el más reciente delante. Un pico que se mantiene en todas las líneas es un acople o un zumbido.'}
           </p>
         </section>
 

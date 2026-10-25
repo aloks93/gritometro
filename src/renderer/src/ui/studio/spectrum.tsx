@@ -10,6 +10,8 @@ export const RTA_CENTERS = [
   20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300,
   8000, 10000, 12500, 16000, 20000
 ]
+const WATERFALL_POINTS = 240
+const WATERFALL_LINES = 40
 const fx = (f: number, w: number): number => (Math.log10(f / 20) / Math.log10(1000)) * w
 const fOfX = (x: number, w: number): number => 20 * Math.pow(1000, x / w)
 const fmtHz = (f: number): string => (f >= 1000 ? `${(f / 1000).toFixed(f >= 10000 ? 1 : 2)}k` : `${Math.round(f)}`)
@@ -63,6 +65,9 @@ export function SpectrumView({ mode, floorDb, height = 280, reference = null, pa
     let ring: ImageData | null = null
     let ringPos = 0
     let rowBins: Int32Array | null = null
+    // Waterfall: recent spectra resampled to log-spaced points, newest last
+    const history: Float32Array[] = []
+    let frame = 0
 
     const draw = (): void => {
       raf = requestAnimationFrame(draw)
@@ -83,6 +88,54 @@ export function SpectrumView({ mode, floorDb, height = 280, reference = null, pa
         g.clearRect(0, 0, w, h)
         lastMode = mode
         rowBins = null
+        history.length = 0
+      }
+
+      if (mode === 'waterfall') {
+        if (!s) return
+        // A new line every 3 frames (~20/s) keeps 2 s of history on screen
+        if (frame++ % 3 === 0) {
+          const line = new Float32Array(WATERFALL_POINTS)
+          for (let p = 0; p < WATERFALL_POINTS; p++) {
+            const f0 = 20 * Math.pow(1000, p / WATERFALL_POINTS)
+            const f1 = 20 * Math.pow(1000, (p + 1) / WATERFALL_POINTS)
+            const b0 = Math.max(1, Math.floor((f0 * s.fftSize) / s.sampleRate))
+            const b1 = Math.min(s.data.length - 1, Math.max(b0, Math.ceil((f1 * s.fftSize) / s.sampleRate)))
+            let m = -200
+            for (let i = b0; i <= b1; i++) if (s.data[i] > m) m = s.data[i]
+            line[p] = m
+          }
+          history.push(line)
+          if (history.length > WATERFALL_LINES) history.shift()
+        }
+        g.clearRect(0, 0, w, h)
+        const depthX = w * 0.18
+        const depthY = h * 0.45
+        const plotW = w - depthX
+        const plotH = h - depthY
+        g.fillStyle = css.getPropertyValue('--st-muted')
+        for (const f of FREQ_LABELS) g.fillText(f >= 1000 ? `${f / 1000}k` : String(f), fx(f, plotW) + 3, h - 4)
+        // Oldest at the back (top right), newest in front: each line hides what's behind it
+        history.forEach((line, idx) => {
+          const age = (history.length - 1 - idx) / WATERFALL_LINES
+          const ox = depthX * age
+          const oy = h - depthY * age
+          g.beginPath()
+          g.moveTo(ox, oy)
+          for (let p = 0; p < line.length; p++) {
+            const t = Math.max(0, Math.min(1, (line[p] - floorDb) / range))
+            g.lineTo(ox + (p / (line.length - 1)) * plotW, oy - t * plotH)
+          }
+          g.lineTo(ox + plotW, oy)
+          g.closePath()
+          g.fillStyle = '#0b0d10'
+          g.fill()
+          const [r, gg, bb] = heat(1 - age * 0.85)
+          g.strokeStyle = `rgb(${r | 0},${gg | 0},${bb | 0})`
+          g.lineWidth = (idx === history.length - 1 ? 1.5 : 1) * dpr
+          g.stroke()
+        })
+        return
       }
 
       if (mode === 'spectrogram') {

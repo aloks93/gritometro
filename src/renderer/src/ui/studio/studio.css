@@ -873,3 +873,126 @@ kbd {
   letter-spacing: 0.3em;
   padding: 0.5em;
 }
+
+/* ---------- lab: distortion, phase, room ---------- */
+.st-lab {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1em;
+  align-items: start;
+}
+.st-lab > .st-panel:nth-child(2) {
+  grid-row: span 2;
+}
+.st-harmonics {
+  display: flex;
+  gap: 6px;
+  height: 110px;
+  align-items: flex-end;
+  padding: 6px;
+  background: #0b0d10;
+  border: 1px solid var(--st-border);
+  border-radius: 4px;
+}
+.st-harmonics > div {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  font: 10px var(--st-mono);
+  color: var(--st-muted);
+}
+.st-harmonics i {
+  width: 70%;
+  background: var(--st-accent);
+  border-radius: 2px 2px 0 0;
+}
+.st-phase {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: 1em;
+  align-items: start;
+}
+.st-gonio {
+  width: 100%;
+  aspect-ratio: 1;
+  background: #0b0d10;
+  border: 1px solid var(--st-border);
+  border-radius: 4px;
+}
+.st-phase-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7em;
+  min-width: 0;
+}
+.st-corr-track {
+  position: relative;
+  height: 16px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgba(255, 77, 94, 0.45), rgba(255, 138, 61, 0.25) 50%, rgba(74, 222, 128, 0.45));
+  border: 1px solid var(--st-border);
+}
+.st-corr-track i {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: var(--st-text);
+  transition: left 0.15s linear;
+}
+.st-corr-track i.ok {
+  background: var(--st-ok);
+}
+.st-corr-track i.warn {
+  background: var(--st-warn);
+}
+.st-corr-track i.bad {
+  background: var(--st-bad);
+}
+.st-corr-scale {
+  display: flex;
+  justify-content: space-between;
+  font: 10px var(--st-mono);
+  color: var(--st-muted);
+}
+.st-room {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7em;
+}
+.st-decay {
+  width: 100%;
+  height: 160px;
+  background: #0b0d10;
+  border: 1px solid var(--st-border);
+  border-radius: 4px;
+}
+.st-decay .curve {
+  fill: none;
+  stroke: var(--st-accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.st-decay .mark {
+  stroke: var(--st-grid);
+  stroke-dasharray: 4 4;
+  vector-effect: non-scaling-stroke;
+}
+.st-decay text {
+  fill: var(--st-muted);
+  font: 10px var(--st-mono);
+}
+@media (max-width: 1100px) {
+  .st-lab,
+  .st-phase {
+    grid-template-columns: 1fr;
+  }
+  .st-lab > .st-panel:nth-child(2) {
+    grid-row: auto;
+  }
+}

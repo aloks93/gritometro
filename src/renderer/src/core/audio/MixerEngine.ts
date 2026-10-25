@@ -81,6 +81,9 @@ interface StripNodes {
   preR: AnalyserNode
   /** Large FFT on the pre-fader signal, for the feedback detector */
   spectrum: AnalyserNode
+  /** Long time-domain windows for phase/correlation analysis */
+  scopeL: AnalyserNode
+  scopeR: AnalyserNode
   cue: GainNode
   fader: GainNode
   duck: GainNode
@@ -100,6 +103,8 @@ interface BusNodes {
   fader: GainNode
   meterL: AnalyserNode
   meterR: AnalyserNode
+  scopeL: AnalyserNode
+  scopeR: AnalyserNode
   stream: MediaStreamAudioDestinationNode
   audio: SinkAudio | null
   usesDestination: boolean
@@ -116,6 +121,8 @@ interface MonitorNodes {
 
 const TC = 0.015
 export const SPECTRUM_FFT = 8192
+/** ~85 ms at 48 kHz: room for ±20 ms of delay between two mics */
+export const SCOPE_SIZE = 4096
 
 /** Inputs whose identity requires reopening devices or rewiring when they change */
 export function structureKey(cfg: Pick<MixerConfig, 'strips' | 'buses' | 'sampleRate'> & Partial<Pick<MixerConfig, 'monitor'>>): string {
@@ -306,6 +313,8 @@ class MixerEngine {
       preL: analyser(ctx),
       preR: analyser(ctx),
       spectrum,
+      scopeL: scopeAnalyser(ctx),
+      scopeR: scopeAnalyser(ctx),
       cue: ctx.createGain(),
       fader: ctx.createGain(),
       duck: ctx.createGain(),
@@ -324,6 +333,8 @@ class MixerEngine {
     preSplit.connect(nodes.preL, 0)
     // A mono strip only fills the first channel: its right meter reads the same as the left
     preSplit.connect(nodes.preR, stereo ? 1 : 0)
+    preSplit.connect(nodes.scopeL, 0)
+    preSplit.connect(nodes.scopeR, stereo ? 1 : 0)
     nodes.delay.connect(spectrum)
     nodes.cue.gain.value = 0
     nodes.delay.connect(nodes.cue)
@@ -363,6 +374,10 @@ class MixerEngine {
     fader.connect(split)
     split.connect(meterL, 0)
     split.connect(meterR, 1)
+    const scopeL = scopeAnalyser(ctx)
+    const scopeR = scopeAnalyser(ctx)
+    split.connect(scopeL, 0)
+    split.connect(scopeR, 1)
     const stream = ctx.createMediaStreamDestination()
     fader.connect(stream)
     // The first output bus uses the context's own (lowest-latency) output, others an <audio> sink
@@ -379,7 +394,7 @@ class MixerEngine {
         void audio.play().catch(() => undefined)
       }
     }
-    return { sum, limiter, limiterTrim, stereo, mono, fader, meterL, meterR, stream, audio, usesDestination: firstOut && b.kind === 'out', recorder: null }
+    return { sum, limiter, limiterTrim, stereo, mono, fader, meterL, meterR, scopeL, scopeR, stream, audio, usesDestination: firstOut && b.kind === 'out', recorder: null }
   }
 
   /** Headphone output: built after the buses, before the strips (they connect their cue to it) */
@@ -558,6 +573,18 @@ class MixerEngine {
     return !!this.monitor
   }
 
+  /**
+   * Last SCOPE_SIZE samples of a strip (pre-fader) or bus (post-fader), left and right.
+   * Both analysers are read in the same task, so the two windows are sample-aligned.
+   */
+  scope(kind: 'strip' | 'bus', id: string, l: Float32Array<ArrayBuffer>, r: Float32Array<ArrayBuffer>): boolean {
+    const n = kind === 'strip' ? this.strips.get(id) : this.buses.get(id)
+    if (!n || l.length !== SCOPE_SIZE || r.length !== SCOPE_SIZE) return false
+    n.scopeL.getFloatTimeDomainData(l)
+    n.scopeR.getFloatTimeDomainData(r)
+    return true
+  }
+
   busLevel(id: string): BusLevel | null {
     const n = this.buses.get(id)
     if (!n) return null
@@ -650,6 +677,13 @@ async function openSource(ctx: AudioContext, deviceId: string | null): Promise<S
 function analyser(ctx: AudioContext): AnalyserNode {
   const a = ctx.createAnalyser()
   a.fftSize = 1024
+  a.smoothingTimeConstant = 0
+  return a
+}
+
+function scopeAnalyser(ctx: AudioContext): AnalyserNode {
+  const a = ctx.createAnalyser()
+  a.fftSize = SCOPE_SIZE
   a.smoothingTimeConstant = 0
   return a
 }

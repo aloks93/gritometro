@@ -8,6 +8,7 @@ import { useStore } from '../store'
 import { CompareView } from './CompareView'
 import { generator } from './generator'
 import { GeneratorView } from './GeneratorView'
+import { LabView } from './LabView'
 import { MixerView, useMixerState } from './MixerView'
 import { MonitorView, useStudioPrefs } from './MonitorView'
 import { setPlaybackDevice, stopPlayback } from './playback'
@@ -15,7 +16,7 @@ import { RecorderView } from './RecorderView'
 import { SlmView } from './SlmView'
 import './studio.css'
 
-type Tab = 'monitor' | 'mixer' | 'slm' | 'recorder' | 'compare' | 'generator' | 'input'
+type Tab = 'monitor' | 'mixer' | 'slm' | 'recorder' | 'compare' | 'lab' | 'generator' | 'input'
 
 const TABS: [Tab, string][] = [
   ['monitor', 'Monitor'],
@@ -23,6 +24,7 @@ const TABS: [Tab, string][] = [
   ['slm', 'Sonómetro'],
   ['recorder', 'Grabadora'],
   ['compare', 'Comparador'],
+  ['lab', 'Laboratorio'],
   ['generator', 'Generador'],
   ['input', 'Entrada']
 ]
@@ -31,7 +33,7 @@ const TABS: [Tab, string][] = [
 let lastTab: Tab = 'monitor'
 
 const SHORTCUTS: [string, string][] = [
-  ['Ctrl+1 … Ctrl+7', 'Cambiar de pestaña'],
+  ['Ctrl+1 … Ctrl+8', 'Cambiar de pestaña'],
   ['F11', 'Pantalla completa'],
   ['F · P', 'Monitor: fijar referencia · congelar analizador'],
   ['R · M', 'Grabadora: grabar/detener · marcador'],
@@ -107,7 +109,7 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement
       const typing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
-      if (e.ctrlKey && !e.shiftKey && /^Digit[1-7]$/.test(e.code)) {
+      if (e.ctrlKey && !e.shiftKey && /^Digit[1-8]$/.test(e.code)) {
         e.preventDefault()
         setTab(TABS[Number(e.code.slice(5)) - 1][0])
       } else if (!typing && e.key === '?') {
@@ -202,6 +204,7 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
         {tab === 'slm' && <SlmView />}
         {tab === 'recorder' && <RecorderView />}
         {tab === 'compare' && <CompareView />}
+        {tab === 'lab' && <LabView />}
         {tab === 'generator' && <GeneratorView />}
         {tab === 'input' && (
           <div className="st-embedded">
