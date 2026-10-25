@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
 import { promises as fs } from 'fs'
 import { basename, join } from 'path'
+import { setupMultitrackIpc } from './multitrack'
 import { dataPath, readKey, writeKey } from './storage'
 
 let mainWindow: BrowserWindow | null = null
@@ -131,6 +132,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
   setupPermissions()
   setupIpc()
+  setupMultitrackIpc(() => mainWindow)
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

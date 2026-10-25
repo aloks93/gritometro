@@ -5,6 +5,7 @@ import { isVirtualDevice } from './AudioConfig'
 // no-inline: the CSP blocks data: URLs for worklet modules
 import busTapUrl from './busTap.worklet.js?url&no-inline'
 import gateUrl from './stripGate.worklet.js?url&no-inline'
+import trackTapUrl from './trackTap.worklet.js?url&no-inline'
 
 // Web Audio graph of the virtual mixer. One AudioContext; every input device is opened once
 // and split into channels; each strip is a mono (or stereo) channel strip feeding buses.
@@ -50,6 +51,44 @@ export interface StripLevel extends ChannelLevel {
 
 export interface BusLevel extends ChannelLevel {
   gr: number
+}
+
+/** Where each strip is recorded in a multitrack take */
+export type MultitrackPoint = 'input' | 'pre' | 'post'
+
+export interface MultitrackSpec {
+  point: MultitrackPoint
+  /** Strip ids to record, one track each */
+  strips: string[]
+  /** Bus ids to record, one stereo track each */
+  buses: string[]
+}
+
+export interface MultitrackTrackInfo {
+  name: string
+  channels: number
+  source: string
+}
+
+interface MultitrackTake {
+  taps: AudioWorkletNode[]
+  /** Per-tap start/stop offset in frames (latency compensation) */
+  lags: number[]
+  tracks: MultitrackTrackInfo[]
+  startFrame: number
+  pending: Set<number>
+  onDone: (() => void) | null
+  onInterrupt: () => void
+}
+
+/** Tracks a take would have, in file order (strips first, then buses) */
+export function multitrackTracks(cfg: Pick<MixerConfig, 'strips' | 'buses'>, spec: MultitrackSpec): MultitrackTrackInfo[] {
+  const where = spec.point === 'input' ? 'entrada' : spec.point === 'pre' ? 'pre-fader' : 'post-fader'
+  const strips = cfg.strips
+    .filter((s) => spec.strips.includes(s.id))
+    .map((s) => ({ name: s.name, channels: spec.point === 'post' || s.input.mode === 'stereo' ? 2 : 1, source: `${s.name} (${where})` }))
+  const buses = cfg.buses.filter((b) => spec.buses.includes(b.id)).map((b) => ({ name: `Bus ${b.label} ${b.name}`, channels: 2, source: `Bus ${b.label}` }))
+  return [...strips, ...buses]
 }
 
 type SinkContext = AudioContext & { setSinkId?: (id: string) => Promise<void> }
@@ -122,6 +161,8 @@ interface MonitorNodes {
 }
 
 const TC = 0.015
+/** Built-in look-ahead of every DynamicsCompressorNode (Chromium): 6 ms */
+export const COMPRESSOR_DELAY_S = 0.006
 export const SPECTRUM_FFT = 8192
 /** ~85 ms at 48 kHz: room for ±20 ms of delay between two mics */
 export const SCOPE_SIZE = 4096
@@ -150,6 +191,7 @@ class MixerEngine {
   private listeners = new Set<(s: MixerState) => void>()
   private _state: MixerState = { status: 'off', stripErrors: {}, generation: 0 }
   private buf = new Float32Array(1024)
+  private multi: MultitrackTake | null = null
 
   get state(): MixerState {
     return this._state
@@ -176,7 +218,7 @@ class MixerEngine {
     this.setState({ status: 'starting', error: undefined, stripErrors: {} })
     try {
       const ctx = new AudioContext({ latencyHint: 'interactive', ...(cfg.sampleRate ? { sampleRate: cfg.sampleRate } : {}) }) as SinkContext
-      await Promise.all([ctx.audioWorklet.addModule(gateUrl), ctx.audioWorklet.addModule(busTapUrl)])
+      await Promise.all([ctx.audioWorklet.addModule(gateUrl), ctx.audioWorklet.addModule(busTapUrl), ctx.audioWorklet.addModule(trackTapUrl)])
       const stripErrors: Record<string, string> = {}
       // Open every distinct device once
       const devices = [...new Set(cfg.strips.map((s) => s.input.deviceId ?? ''))]
@@ -241,6 +283,13 @@ class MixerEngine {
   }
 
   private teardown(): void {
+    // A rebuild ends the take: what was recorded so far is kept
+    if (this.multi) {
+      const m = this.multi
+      this.multi = null
+      m.taps.forEach((t) => (t.port.onmessage = null))
+      m.onInterrupt()
+    }
     if (this.duckTimer) clearInterval(this.duckTimer)
     this.duckTimer = null
     if (this.monitor) {
@@ -652,6 +701,97 @@ class MixerEngine {
     const rec = this.buses.get(id)?.recorder
     if (!rec || !this.ctx) return 0
     return rec.left.reduce((n, c) => n + c.length, 0) / this.ctx.sampleRate
+  }
+
+  // ---- Multitrack
+
+  get multitracking(): boolean {
+    return !!this.multi
+  }
+
+  /**
+   * Starts recording every requested strip (at the chosen point) and bus on its own track.
+   * All taps start on the same future frame, so the tracks are sample-aligned. Chunks arrive
+   * through `onChunk(trackIndex, channels)`; `onInterrupt` fires if the graph is rebuilt.
+   */
+  startMultitrack(cfg: MixerConfig, spec: MultitrackSpec, onChunk: (track: number, channels: Float32Array[]) => void, onInterrupt: () => void): MultitrackTrackInfo[] | null {
+    const ctx = this.ctx
+    if (!ctx || this.multi) return null
+    const tracks = multitrackTracks(cfg, spec)
+    const sources: { node: AudioNode; lag: number }[] = []
+    for (const s of cfg.strips) {
+      if (!spec.strips.includes(s.id)) continue
+      const n = this.strips.get(s.id)
+      if (!n) return null
+      sources.push({ node: spec.point === 'input' ? n.input : spec.point === 'pre' ? n.delay : n.pan, lag: 0 })
+    }
+    // A bus hears the strips through their compressor + limiter and its own limiter: start its
+    // tracks that much later so they line up with the strip tracks sample for sample
+    const busLag = Math.round(COMPRESSOR_DELAY_S * ctx.sampleRate) * (spec.point === 'input' ? 3 : 1)
+    for (const b of cfg.buses) {
+      if (!spec.buses.includes(b.id)) continue
+      const n = this.buses.get(b.id)
+      if (!n) return null
+      sources.push({ node: n.fader, lag: busLag })
+    }
+    if (!sources.length) return null
+    // A little ahead, so every tap is in the graph before recording begins
+    const startFrame = Math.round((ctx.currentTime + 0.15) * ctx.sampleRate)
+    const mute = ctx.createGain()
+    mute.gain.value = 0
+    mute.connect(ctx.destination)
+    const take: MultitrackTake = { taps: [], lags: [], tracks, startFrame, pending: new Set(tracks.map((_, i) => i)), onDone: null, onInterrupt }
+    sources.forEach(({ node: src, lag }, i) => {
+      const channels = tracks[i].channels
+      const tap = new AudioWorkletNode(ctx, 'track-tap', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+        channelCount: channels,
+        channelCountMode: 'explicit',
+        channelInterpretation: 'speakers',
+        processorOptions: { channels, startFrame: startFrame + lag }
+      })
+      tap.port.onmessage = (e: MessageEvent<{ channels: Float32Array[]; done: boolean }>) => {
+        if (e.data.channels[0]?.length) onChunk(i, e.data.channels)
+        if (e.data.done) {
+          take.pending.delete(i)
+          tap.disconnect()
+          if (take.pending.size === 0) take.onDone?.()
+        }
+      }
+      src.connect(tap).connect(mute)
+      take.taps.push(tap)
+      take.lags.push(lag)
+    })
+    this.multi = take
+    return tracks
+  }
+
+  /** Ends the take on one common frame and resolves once every track has delivered its last chunk */
+  stopMultitrack(): Promise<void> {
+    const ctx = this.ctx
+    const take = this.multi
+    if (!ctx || !take) return Promise.resolve()
+    const frame = Math.max(take.startFrame, Math.round((ctx.currentTime + 0.05) * ctx.sampleRate))
+    return new Promise((resolve) => {
+      const finish = (): void => {
+        if (this.multi === take) this.multi = null
+        resolve()
+      }
+      take.onDone = finish
+      // Never hang the UI if the context stops pulling (device unplugged)
+      setTimeout(finish, 3000)
+      take.taps.forEach((t, i) => t.port.postMessage({ type: 'stop', frame: frame + take.lags[i] }))
+    })
+  }
+
+  /** Seconds recorded so far in the current take */
+  multitrackSeconds(): number {
+    const ctx = this.ctx
+    const take = this.multi
+    if (!ctx || !take) return 0
+    return Math.max(0, ctx.currentTime - take.startFrame / ctx.sampleRate)
   }
 
   /** Channel count and name of each opened input device */

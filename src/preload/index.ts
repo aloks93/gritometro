@@ -15,7 +15,16 @@ const api = {
     open: (extensions: string[]): Promise<string | null> => ipcRenderer.invoke('file:open', extensions),
     printPdf: (defaultName: string): Promise<string | null> => ipcRenderer.invoke('file:printPdf', defaultName),
     htmlToPdf: (defaultName: string, html: string): Promise<string | null> => ipcRenderer.invoke('file:htmlToPdf', defaultName, html),
-    openBinary: (extensions: string[]): Promise<{ name: string; base64: string }[] | null> => ipcRenderer.invoke('file:openBinary', extensions)
+    openBinary: (extensions: string[]): Promise<{ name: string; base64: string }[] | null> => ipcRenderer.invoke('file:openBinary', extensions),
+    openPath: (path: string): Promise<string> => ipcRenderer.invoke('shell:openPath', path)
+  },
+  /** Multitrack recording streamed to disk (one WAV per track) */
+  rec: {
+    chooseDir: (current: string | null): Promise<string | null> => ipcRenderer.invoke('rec:chooseDir', current),
+    open: (dir: string, folderName: string, tracks: { file: string; channels: number }[], sampleRate: number, format: 16 | 24 | 'float'): Promise<{ id: number; folder: string }> =>
+      ipcRenderer.invoke('rec:open', dir, folderName, tracks, sampleRate, format),
+    write: (id: number, track: number, data: Uint8Array): Promise<boolean> => ipcRenderer.invoke('rec:write', id, track, data),
+    close: (id: number, extras?: { name: string; content: string }[]): Promise<{ folder: string; bytes: number; errors: string[] } | null> => ipcRenderer.invoke('rec:close', id, extras)
   }
 }
 

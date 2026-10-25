@@ -1108,11 +1108,45 @@ export const EN: Record<string, string> = {
   'Olvidar otro canal…': 'Forget another channel…',
   '¿Olvidar los ajustes guardados de ese canal?': 'Forget the saved settings of that channel?',
   'Guardado por última vez:': 'Last saved:',
-  'Cada canal guarda sus propios ajustes': 'Each channel keeps its own settings'
+  'Cada canal guarda sus propios ajustes': 'Each channel keeps its own settings',
+
+  // ---- mic processor
+  'Grabación multipista': 'Multitrack recording',
+  'REC': 'REC',
+  'Añadir un marcador (M)': 'Add a marker (M)',
+  'Preparando…': 'Preparing…',
+  'Guardando…': 'Saving…',
+  'Detener': 'Stop',
+  'Grabar multipista': 'Record multitrack',
+  'Entrada (sin procesar)': 'Input (unprocessed)',
+  'Procesada (pre-fader)': 'Processed (pre-fader)',
+  'Qué se graba de cada entrada: la señal tal como llega (tras el trim), con su procesamiento, o tras el fader y el panorama': 'What is recorded from each input: the signal as it arrives (after trim), with its processing, or after the fader and pan',
+  'Formato': 'Format',
+  'WAV 16 bits': 'WAV 16-bit',
+  'WAV 24 bits': 'WAV 24-bit',
+  'WAV 32 bits float': 'WAV 32-bit float',
+  'Se pedirá la carpeta al grabar': 'You will be asked for a folder when recording',
+  'Cambiar carpeta…': 'Change folder…',
+  'estéreo': 'stereo',
+  'mono': 'mono',
+  'Abrir carpeta': 'Open folder',
+  'Cada pista es un WAV en una carpeta nueva por toma, todas alineadas al mismo sample, con sesion.txt y sesion.json (pistas y marcadores). Se escribe en disco mientras grabas.': 'Each track is a WAV in a new folder per take, all aligned to the same sample, with sesion.txt and sesion.json (tracks and markers). It is written to disk while you record.',
+  'No añadas ni quites entradas durante la toma: el mezclador se reconstruye y la toma se cierra.': 'Don\'t add or remove inputs during a take: the mixer rebuilds and the take is closed.',
+  'La grabación multipista necesita la aplicación de escritorio.': 'Multitrack recording needs the desktop app.',
+  'Enciende el mezclador primero.': 'Turn the mixer on first.',
+  'Elige al menos una pista.': 'Choose at least one track.',
+  'No se pudo empezar: alguna entrada elegida no está abierta en el mezclador.': 'Could not start: one of the chosen inputs is not open in the mixer.'
 }
 
 /** Templates: {0}… capture the values (which are translated too when they are known words) */
 export const PATTERNS: [string, string][] = [
+  // mic processor
+  ['{0} pistas · ≈ {1} por minuto.', '{0} tracks · ≈ {1} per minute.'],
+  ['Carpeta: {0}', 'Folder: {0}'],
+  ['El mezclador se reconstruyó y la toma se cerró. {0}', 'The mixer was rebuilt and the take was closed. {0}'],
+  ['{0} pistas guardadas ({1}) en {2}', '{0} tracks saved ({1}) in {2}'],
+  ['Guardado con errores: {0}', 'Saved with errors: {0}'],
+  ['No se pudo crear la carpeta de la toma: {0}', 'Could not create the take folder: {0}'],
   // mic processor
   ['EQ {0} bandas', 'EQ {0} bands'],
   ['EQ {0} banda', 'EQ {0} band'],

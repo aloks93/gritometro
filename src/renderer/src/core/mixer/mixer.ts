@@ -155,6 +155,19 @@ export interface MixerConfig {
   meterPoint: MeterPoint
   monitor: Monitor
   userPresets: UserPreset[]
+  multitrack: MultitrackPrefs
+}
+
+/** Multitrack recording choices, remembered between sessions */
+export interface MultitrackPrefs {
+  /** 'input' = raw (after trim), 'pre' = processed before the fader, 'post' = after fader and pan */
+  point: 'input' | 'pre' | 'post'
+  /** Strips to record; null = every strip */
+  strips: string[] | null
+  /** Buses recorded as stereo tracks */
+  buses: string[]
+  /** Folder where takes are created; null = ask */
+  dir: string | null
 }
 
 export type MeterPoint = 'pre' | 'post'
@@ -239,7 +252,8 @@ export function defaultMixer(): MixerConfig {
     meterPoint: 'post',
     // Off by default: monitoring to speakers would feed back
     monitor: { on: false, deviceId: null, levelDb: -6, source: 'A1' },
-    userPresets: []
+    userPresets: [],
+    multitrack: { point: 'pre', strips: null, buses: [], dir: null }
   }
 }
 
@@ -260,7 +274,18 @@ export function mergeMixer(saved: Partial<MixerConfig> | null | undefined): Mixe
     midi: Array.isArray(saved.midi) ? saved.midi : [],
     meterPoint: saved.meterPoint === 'pre' ? 'pre' : 'post',
     monitor,
-    userPresets: Array.isArray(saved.userPresets) ? saved.userPresets : []
+    userPresets: Array.isArray(saved.userPresets) ? saved.userPresets : [],
+    multitrack: mergeMultitrack(saved.multitrack, d.multitrack)
+  }
+}
+
+function mergeMultitrack(m: Partial<MultitrackPrefs> | undefined, d: MultitrackPrefs): MultitrackPrefs {
+  if (!m || typeof m !== 'object') return d
+  return {
+    point: m.point === 'input' || m.point === 'post' ? m.point : 'pre',
+    strips: Array.isArray(m.strips) ? m.strips.filter((x) => typeof x === 'string') : null,
+    buses: Array.isArray(m.buses) ? m.buses.filter((x) => typeof x === 'string') : [],
+    dir: typeof m.dir === 'string' ? m.dir : null
   }
 }
 

@@ -28,7 +28,8 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
 
 ## Architecture (electron-vite layout)
 ```
-src/main/          Electron main: window, mic/webcam permissions, IPC (storage, file save/open, PDF, HTML→PDF report)
+src/main/          Electron main: window, mic/webcam permissions, IPC (storage, file save/open, PDF, HTML→PDF report,
+                   multitrack.ts: multitrack takes streamed to disk, one WAV per track, header sizes patched at the end)
 src/preload/       contextBridge API exposed as window.gritometro (typed via GritometroApi)
 src/renderer/src/
   core/            NO React, NO themes. Pure, testable logic.
@@ -71,7 +72,9 @@ src/renderer/src/
                    + optional pre-fader aux C buses (stage monitors),
                    pre/post-fader meters, CUE/PFL + headphone monitor, gain staging, anti-feedback, MIDI learn,
                    user presets, scenes,
-                   stereo bus recording, auto trim; any bus can feed the analyzers),
+                   stereo bus recording, auto trim; any bus can feed the analyzers; MultitrackPanel: multitrack
+                   recording of strips (input/pre/post) + buses, sample-aligned via trackTap.worklet.js with bus latency
+                   compensated, streamed to disk, markers, sesion.json/txt; helpers in core/studio/multitrack.ts),
                    Interfaces (InterfacesView: every interface and channel metered in parallel, click = load that
                    channel in the processor with its own saved setup, names/notes/copy/reset per channel),
                    Procesador (ProcessorView + processor.css + controls.tsx knobs/meters/icons: one mic → noise

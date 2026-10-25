@@ -658,3 +658,65 @@
 .st-bus.out .st-strip-top .st-x {
   margin-left: auto;
 }
+
+/* multitrack recording */
+.st-multitrack.recording {
+  border-color: rgba(255, 77, 94, 0.55);
+  box-shadow: 0 0 0 1px rgba(255, 77, 94, 0.2) inset;
+}
+.st-mt-rec {
+  font: 700 11px var(--st-mono);
+  letter-spacing: 0.1em;
+  color: #fff;
+  background: var(--st-bad);
+  padding: 2px 8px;
+  border-radius: 3px;
+  animation: st-mt-blink 1s steps(2, start) infinite;
+}
+@keyframes st-mt-blink {
+  to {
+    opacity: 0.35;
+  }
+}
+.st-mt-time {
+  font-size: 1.15em;
+}
+.st-mt-tracks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.st-mt-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--st-border);
+  border-left: 3px solid var(--strip, #3a414d);
+  background: #0f1115;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.st-mt-track.on {
+  background: #151a21;
+  border-color: #3a414d;
+  border-left-color: var(--strip, var(--st-accent));
+}
+.st-mt-track.bus {
+  border-left-color: #3a414d;
+}
+.st-mt-track.bus.on {
+  border-left-color: var(--st-accent);
+}
+.st-mt-track small {
+  color: var(--st-muted);
+  font-size: 10.5px;
+}
+.st-mt-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--st-border);
+  margin: 0 4px;
+}

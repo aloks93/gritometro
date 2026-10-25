@@ -44,6 +44,7 @@ import { openTextFile, saveFile, toBase64 } from '../storage'
 import { useStore } from '../store'
 import { useStudioPrefs } from './MonitorView'
 import { fmtTime, Num, Segmented } from './widgets'
+import { MultitrackPanel } from './MultitrackPanel'
 import './mixer.css'
 
 const METER_MIN = -60
@@ -427,6 +428,8 @@ export function MixerView(): JSX.Element {
           />
         ))}
       </section>
+
+      <MultitrackPanel cfg={cfg} setCfg={setCfg} on={on} />
 
       {sel && (
         <StripEditor
