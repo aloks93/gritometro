@@ -1068,11 +1068,54 @@ export const EN: Record<string, string> = {
   'Perilla: ajustar · gráfico EQ: ancho (Q) de la banda': 'Knob: adjust · EQ graph: band width (Q)',
   'Reducción de ruido activada.': 'Noise reduction turned on.',
   'Reducción de ruido en modo escucha: solo sale el ruido eliminado.': 'Noise reduction in listen mode: only the removed noise is going out.',
-  'Reducción de ruido sin perfil aprendido: usa «Aprender» en silencio (mientras, se adapta sola).': 'Noise reduction without a learned profile: use “Learn” in silence (meanwhile it adapts by itself).'
+  'Reducción de ruido sin perfil aprendido: usa «Aprender» en silencio (mientras, se adapta sola).': 'Noise reduction without a learned profile: use “Learn” in silence (meanwhile it adapts by itself).',
+
+  // ---- mic processor
+  'Interfaces': 'Interfaces',
+  'Interfaces de audio': 'Audio interfaces',
+  'Todas las entradas a la vez · pulsa un canal para trabajarlo en el procesador; el anterior se guarda tal cual': 'Every input at once · click a channel to work on it in the processor; the previous one is stored as it was',
+  'Ajustados': 'Set up',
+  'Volver a buscar interfaces': 'Search for interfaces again',
+  'Volver a escanear': 'Rescan',
+  'Algunas interfaces solo entregan 2 canales por el driver del sistema. Si tu interfaz o consola tiene más entradas, actívalas en el panel del fabricante (modo multicanal) o pásalas por VoiceMeeter.': 'Some interfaces only deliver 2 channels through the system driver. If your interface or console has more inputs, enable them in the manufacturer panel (multichannel mode) or route them through VoiceMeeter.',
+  'Buscando interfaces…': 'Searching for interfaces…',
+  'No hay entradas de audio conectadas.': 'No audio inputs connected.',
+  'Conectada': 'Connected',
+  'Ocupada por otro programa': 'In use by another program',
+  'No disponible': 'Not available',
+  'Sin permiso': 'No permission',
+  'Virtual': 'Virtual',
+  'Todos los canales mezclados en uno': 'All channels mixed into one',
+  'Ajustado': 'Set up',
+  'Todos los canales': 'All channels',
+  'Otro programa la usa en modo exclusivo: ciérralo o desactiva el modo exclusivo en Windows.': 'Another program is using it in exclusive mode: close it or turn off exclusive mode in Windows.',
+  'Sin ajustes guardados': 'No saved settings',
+  'En el procesador': 'In the processor',
+  'Canal en el procesador': 'Channel in the processor',
+  'Interfaz no conectada': 'Interface not connected',
+  'interfaz desconectada': 'interface disconnected',
+  'Nombre del canal': 'Channel name',
+  'p. ej. Micro del presentador': 'e.g. Host microphone',
+  'Micro, posición, cable…': 'Mic, position, cable…',
+  'Procesamiento de este canal': 'Processing of this channel',
+  'Sin procesar': 'Unprocessed',
+  'Editar en el procesador': 'Edit in the processor',
+  'Encender procesador': 'Turn processor on',
+  'Copiar ajustes de otro canal': 'Copy settings from another channel',
+  'Elegir canal…': 'Choose channel…',
+  '¿Dejar este canal sin procesar? El nombre y la nota se conservan.': 'Leave this channel unprocessed? The name and note are kept.',
+  'Restablecer canal': 'Reset channel',
+  'Olvidar otro canal…': 'Forget another channel…',
+  '¿Olvidar los ajustes guardados de ese canal?': 'Forget the saved settings of that channel?',
+  'Guardado por última vez:': 'Last saved:',
+  'Cada canal guarda sus propios ajustes': 'Each channel keeps its own settings'
 }
 
 /** Templates: {0}… capture the values (which are translated too when they are known words) */
 export const PATTERNS: [string, string][] = [
+  // mic processor
+  ['EQ {0} bandas', 'EQ {0} bands'],
+  ['EQ {0} banda', 'EQ {0} band'],
   // mic processor
 
   // mic processor

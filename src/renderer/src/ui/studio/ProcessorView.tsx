@@ -4,6 +4,7 @@ import { listInputs, type InputDevice } from '../../core/audio/MicrophoneService
 import { autoTrim, logFreqs } from '../../core/mixer/mixer'
 import { autoMakeupDb, saturate, type CompParams } from '../../core/processor/dynamics'
 import type { NoiseResolution } from '../../core/processor/noise'
+import { channelKey, switchChannel } from '../../core/processor/channels'
 import {
   applyChain,
   autoSetup,
@@ -259,7 +260,7 @@ function IoPanel({ cfg, set, inputs, outputs, channels }: { cfg: ProcessorConfig
         </h3>
         <label className="vp-field">
           <span>Micrófono</span>
-          <select value={cfg.input.deviceId ?? ''} onChange={(e) => set({ input: { ...cfg.input, deviceId: e.target.value || null } })}>
+          <select value={cfg.input.deviceId ?? ''} onChange={(e) => set((c) => switchChannel(c, { ...c.input, deviceId: e.target.value || null }))}>
             <option value="">Predeterminado del sistema</option>
             {inputs.map((d) => (
               <option key={d.deviceId} value={d.deviceId}>
@@ -271,13 +272,16 @@ function IoPanel({ cfg, set, inputs, outputs, channels }: { cfg: ProcessorConfig
         </label>
         <label className="vp-field vp-narrow">
           <span>Canal</span>
-          <select value={cfg.input.channel} onChange={(e) => set({ input: { ...cfg.input, channel: Number(e.target.value) } })}>
+          <select value={cfg.input.channel} onChange={(e) => set((c) => switchChannel(c, { ...c.input, channel: Number(e.target.value) }))} title="Cada canal guarda sus propios ajustes">
             <option value={-1}>Mezcla de todos</option>
-            {Array.from({ length: Math.max(channels, cfg.input.channel + 1, 1) }, (_, i) => (
-              <option key={i} value={i}>
-                Canal {i + 1}
-              </option>
-            ))}
+            {Array.from({ length: Math.max(channels, cfg.input.channel + 1, 1) }, (_, i) => {
+              const name = cfg.channels[channelKey({ deviceId: cfg.input.deviceId, channel: i })]?.name
+              return (
+                <option key={i} value={i}>
+                  {name ? `Canal ${i + 1} · ${name}` : `Canal ${i + 1}`}
+                </option>
+              )
+            })}
           </select>
         </label>
         <label className="vp-field vp-narrow">

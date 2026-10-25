@@ -12,6 +12,7 @@ import { generator } from './generator'
 import { resolveLang, useStudioTranslation, type StudioLang, type StudioLangPref } from './i18n'
 import { AlarmBanner, HealthButton, HealthPanel, StageView, useHealth } from './health'
 import { GeneratorView } from './GeneratorView'
+import { InterfacesView } from './InterfacesView'
 import { LabView } from './LabView'
 import { MixerView, useMixerState } from './MixerView'
 import { MonitorView, useStudioPrefs } from './MonitorView'
@@ -22,11 +23,12 @@ import { SlmView } from './SlmView'
 import type { StudioViewMode } from '../../core/studio/studio'
 import './studio.css'
 
-type Tab = 'monitor' | 'mixer' | 'processor' | 'slm' | 'calib' | 'recorder' | 'compare' | 'lab' | 'generator' | 'input' | 'devices'
+type Tab = 'monitor' | 'mixer' | 'interfaces' | 'processor' | 'slm' | 'calib' | 'recorder' | 'compare' | 'lab' | 'generator' | 'input' | 'devices'
 
 const TABS: [Tab, string][] = [
   ['monitor', 'Monitor'],
   ['mixer', 'Mezclador'],
+  ['interfaces', 'Interfaces'],
   ['processor', 'Procesador'],
   ['slm', 'Sonómetro'],
   ['calib', 'Calibración'],
@@ -39,7 +41,7 @@ const TABS: [Tab, string][] = [
 ]
 
 /** Tabs kept in the measurement view (no mixing or recording) */
-const MEASURE_TABS: Tab[] = ['monitor', 'slm', 'calib', 'compare', 'lab', 'generator', 'input', 'devices']
+const MEASURE_TABS: Tab[] = ['monitor', 'interfaces', 'slm', 'calib', 'compare', 'lab', 'generator', 'input', 'devices']
 
 const VIEW_MODES: [StudioViewMode, string][] = [
   ['stage', 'Escenario'],
@@ -281,6 +283,7 @@ function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLan
           <>
             {shown === 'monitor' && <MonitorView />}
             {shown === 'mixer' && <MixerView />}
+            {shown === 'interfaces' && <InterfacesView onOpenProcessor={() => setTab('processor')} />}
             {shown === 'processor' && <ProcessorView />}
             {shown === 'slm' && <SlmView />}
             {shown === 'calib' && <CalibrationView />}

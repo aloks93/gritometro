@@ -38,14 +38,16 @@ src/renderer/src/
                    setSourceOverride to analyse a mixer bus), MixerEngine (virtual mixer graph,
                    stripGate.worklet.js, busTap.worklet.js),
                    Calibration (noise floor), ScoreEngine (scream score + SilenceWatcher),
-                   ProcessorEngine (mic processor graph, processor.worklet.ts bundled via ?worker&url)
+                   ProcessorEngine (mic processor graph, processor.worklet.ts bundled via ?worker&url),
+                   InputScanner (opens every input at once and meters each channel, for the Interfaces tab)
     game/          GameMode contract, registry, modes/*
     players/       players, teams, avatars, age handicap
     settings/      game settings + defaults (appMode, birthdayName)
     processor/     mic processor: model, 8-band parametric EQ (exact Web Audio biquads), presets use × mic,
                    auto setup; dynamics.ts (gate/expander with key filters, de-esser, compressor with sidechain HPF
                    and auto makeup, saturator, look-ahead limiter) and noise.ts (STFT Wiener noise suppressor,
-                   learned or adaptive profile), both shared with processor.worklet.ts
+                   learned or adaptive profile), both shared with processor.worklet.ts; channels.ts (one
+                   setup per device channel: switching channel stores the current one and restores the target)
     mixer/         pure mixer model: strips, buses, solo/mute, pan law, fader taper, EQ response,
                    routing warnings, scenes, auto trim (MixerEngine.ts in audio/ builds the graph)
     studio/        pure studio DSP: analysis (third-octave, centroid, SNR, technicalScore, WAV 16/24/float
@@ -70,6 +72,8 @@ src/renderer/src/
                    pre/post-fader meters, CUE/PFL + headphone monitor, gain staging, anti-feedback, MIDI learn,
                    user presets, scenes,
                    stereo bus recording, auto trim; any bus can feed the analyzers),
+                   Interfaces (InterfacesView: every interface and channel metered in parallel, click = load that
+                   channel in the processor with its own saved setup, names/notes/copy/reset per channel),
                    Procesador (ProcessorView + processor.css + controls.tsx knobs/meters/icons: one mic → noise
                    reduction → gate → parametric EQ → de-esser → comp ×2 → saturator → limiter → VoiceMeeter Input /
                    any output, LUFS/true peak, EQ/dynamics/noise graphs, bypass A/B, presets, auto assistant; no emoji),

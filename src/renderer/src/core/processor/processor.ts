@@ -1,6 +1,7 @@
 import type { CompParams, DeEsserParams, GateParams, LimiterParams, SaturationParams } from './dynamics'
 import { LOOKAHEAD_MS } from './dynamics'
 import { noiseLatency, type NoiseParams } from './noise'
+import type { ChannelSetup } from './channels'
 import { responseDb, type Biquad } from '../studio/dsp'
 
 // Mic processor ("channel strip" for one microphone), meant to sit between a mic and
@@ -65,6 +66,8 @@ export interface ProcessorConfig extends ProcessingChain {
   useId: string
   micId: string
   userPresets: ProcessorPreset[]
+  /** Saved setup of every channel that has been worked on (see channels.ts), by channelKey */
+  channels: Record<string, ChannelSetup>
 }
 
 export const MAX_BANDS = 8
@@ -134,7 +137,8 @@ export function defaultProcessor(): ProcessorConfig {
     sampleRate: 48000,
     useId: 'speech',
     micId: 'dynamic',
-    userPresets: []
+    userPresets: [],
+    channels: {}
   }
 }
 
@@ -178,8 +182,29 @@ export function mergeProcessor(saved: Partial<ProcessorConfig> | null | undefine
     eqPosition: saved.eqPosition === 'post' ? 'post' : 'pre',
     inputGainDb: num(saved.inputGainDb, d.inputGainDb, GAIN_MIN, GAIN_MAX),
     outputGainDb: num(saved.outputGainDb, d.outputGainDb, -24, 24),
-    userPresets: Array.isArray(saved.userPresets) ? saved.userPresets : []
+    userPresets: Array.isArray(saved.userPresets) ? saved.userPresets : [],
+    channels: mergeChannels(saved.channels)
   }
+}
+
+function mergeChannels(raw: unknown): Record<string, ChannelSetup> {
+  if (!raw || typeof raw !== 'object') return {}
+  const d = defaultProcessor()
+  const out: Record<string, ChannelSetup> = {}
+  for (const [key, v] of Object.entries(raw as Record<string, Partial<ChannelSetup>>)) {
+    if (!v || typeof v !== 'object' || !key.includes('#')) continue
+    out[key] = {
+      name: typeof v.name === 'string' ? v.name : '',
+      note: typeof v.note === 'string' ? v.note : '',
+      chain: normalizeChain(v.chain, d),
+      inputGainDb: num(v.inputGainDb, 0, GAIN_MIN, GAIN_MAX),
+      outputGainDb: num(v.outputGainDb, 0, -24, 24),
+      phaseInvert: !!v.phaseInvert,
+      eqPosition: v.eqPosition === 'post' ? 'post' : 'pre',
+      updatedAt: num(v.updatedAt, 0)
+    }
+  }
+  return out
 }
 
 export function chainOf(cfg: ProcessingChain): ProcessingChain {
