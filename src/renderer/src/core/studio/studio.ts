@@ -43,6 +43,8 @@ export interface StudioPrefs {
   viewMode: StudioViewMode
   /** SPL above which the health panel raises an "over" alarm */
   alarmSplDb: number
+  /** Switch audio profile when its device is plugged in / the active one disappears */
+  autoProfile: boolean
 }
 
 export type StudioViewMode = 'stage' | 'studio' | 'measure'
@@ -79,7 +81,8 @@ export function defaultStudioPrefs(): StudioPrefs {
     analysisSource: 'input',
     viewMode: 'studio',
     // Shouting into a mic up close easily passes 100 dB; 110 is where it starts to hurt
-    alarmSplDb: 110
+    alarmSplDb: 110,
+    autoProfile: false
   }
 }
 

@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { audioEngine, joinChunks } from '../../core/audio/AudioEngine'
 import { MIN_DB } from '../../core/audio/LevelAnalyzer'
 import { activeProfile } from '../../core/audio/AudioConfig'
-import { decodeWav, encodeWav, envelope, pcmRms, pcmStats, type WavFormat } from '../../core/studio/analysis'
+import { decodeWav, encodeWav, envelope, pcmRms, pcmStats, technicalScore, type WavFormat } from '../../core/studio/analysis'
 import { encodeFlac } from '../../core/studio/flac'
+import { toCsv } from '../../core/studio/hardware'
 import { LoudnessMeter, measureLoudness, type LoudnessReading } from '../../core/studio/loudness'
 import {
   buildSession,
@@ -485,6 +486,22 @@ function SessionPanel({ list, onMsg }: { list: Recording[]; onMsg: (m: string) =
       onMsg(err instanceof Error ? err.message : String(err))
     }
   }
+  /** Numbers only, for a spreadsheet: one table of takes, one of compared mics */
+  const measurementsCsv = async (): Promise<void> => {
+    const s = current()
+    const rows: (string | number)[][] = [['Sesión', s.meta.title, 'Fecha', new Date(s.createdAt).toLocaleString('es')], [], ['Toma', 'Duración s', 'Muestreo Hz', 'LUFS', 'True peak dBTP', 'Pico dBFS', 'RMS dBFS', 'Muestras saturadas', 'Marcadores']]
+    for (const t of s.takes) rows.push([t.name, Math.round(t.durationS * 10) / 10, t.sampleRate, t.lufs, t.truePeakDb, t.peakDb, t.rmsDb, t.clippedSamples, t.markers.length])
+    const mics = s.candidates.filter((c) => c.metrics)
+    if (mics.length) {
+      rows.push([], ['Micrófono', 'Puntos', 'SNR dB', 'Ruido dBFS', 'Nivel dBFS', 'LUFS', 'True peak dBTP', 'Cresta dB', 'Centroide Hz', 'Saturaciones', 'A ciegas'])
+      for (const c of mics) {
+        const m = c.metrics!
+        rows.push([c.name, technicalScore(m).total, m.snrDb, m.noiseFloorDb, m.levelDb, m.lufs ?? NaN, m.truePeakDb ?? m.peakDb, m.crestDb, m.centroidHz, m.clipCount, c.rating ?? NaN])
+      }
+    }
+    const path = await saveFile(`mediciones-${stamp()}.csv`, toCsv(rows))
+    if (path) onMsg(`Mediciones exportadas a ${path}`)
+  }
   const csv = async (): Promise<void> => {
     const path = await saveFile(`marcadores-${stamp()}.csv`, markersCsv([...list].reverse()))
     if (path) onMsg(`Marcadores exportados a ${path}`)
@@ -498,6 +515,9 @@ function SessionPanel({ list, onMsg }: { list: Recording[]; onMsg: (m: string) =
         <div className="st-row">
           <button className="st-btn" onClick={csv} disabled={!list.some((r) => r.markers.length)}>
             Marcadores CSV
+          </button>
+          <button className="st-btn" onClick={measurementsCsv} disabled={list.length === 0 && !data.studio.candidates.some((c) => c.metrics)}>
+            Mediciones CSV
           </button>
           <button className="st-btn" onClick={saveJson}>
             Guardar sesión

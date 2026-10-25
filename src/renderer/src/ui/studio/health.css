@@ -342,3 +342,16 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+/* Ten tabs plus the right-hand controls: tighten the tabs before they start scrolling */
+.st-tabs button {
+  padding: 0 0.5em;
+}
+@media (max-width: 1700px) {
+  .st-tabs button {
+    font-size: 0.88em;
+    padding: 0 0.4em;
+  }
+  .st-brand b {
+    display: none;
+  }
+}

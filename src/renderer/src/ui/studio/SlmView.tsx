@@ -5,6 +5,7 @@ import { type TimeWeighting, type Weighting } from '../../core/studio/loudness'
 import { saveFile } from '../storage'
 import { useEngineState } from '../hooks'
 import { useStore } from '../store'
+import { saveCanvasPng } from './exports'
 import { useSoundLevel, type SlmSample } from './meters'
 import { useStudioPrefs } from './MonitorView'
 import { fitCanvas, fmtTime, Readout, Segmented } from './widgets'
@@ -179,5 +180,12 @@ function HistoryChart({ history, slow }: { history: SlmSample[]; slow: boolean }
     draw()
     return () => cancelAnimationFrame(raf)
   }, [])
-  return <canvas ref={canvas} className="st-canvas" style={{ height: 180 }} />
+  return (
+    <div className="st-spectrum">
+      <canvas ref={canvas} className="st-canvas" style={{ height: 180 }} />
+      <button className="st-png" onClick={() => void saveCanvasPng(canvas.current, 'sonometro-historial')} title="Guardar el historial (PNG)">
+        PNG
+      </button>
+    </div>
+  )
 }

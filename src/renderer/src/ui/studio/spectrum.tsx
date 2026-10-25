@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { audioEngine } from '../../core/audio/AudioEngine'
 import { noteName, thirdOctavePower } from '../../core/studio/analysis'
 import type { SpectrumMode } from '../../core/studio/studio'
+import { saveCanvasPng } from './exports'
 import { fitCanvas } from './widgets'
 
 const FREQ_LABELS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
@@ -319,6 +320,9 @@ export function SpectrumView({ mode, floorDb, height = 280, reference = null, pa
         onMouseMove={(e) => (mouse.current = e.nativeEvent.offsetX)}
         onMouseLeave={() => (mouse.current = null)}
       />
+      <button className="st-png" onClick={() => void saveCanvasPng(canvas.current, `espectro-${mode}`)} title="Guardar la imagen del analizador (PNG)">
+        PNG
+      </button>
       {mode === 'spectrogram' && (
         <div className="st-spectro-labels">
           {[20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50].map((f) => (

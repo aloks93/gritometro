@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { audioEngine } from '../../core/audio/AudioEngine'
 import { mixerEngine } from '../../core/audio/MixerEngine'
-import { useEngineState } from '../hooks'
 import { AudioScreen } from '../screens/AudioScreen'
 import { api } from '../storage'
 import { useStore } from '../store'
 import { CalibrationView } from './CalibrationView'
 import { CompareView } from './CompareView'
+import { DevicesView, useAutoProfile } from './DevicesView'
 import { generator } from './generator'
 import { AlarmBanner, HealthButton, HealthPanel, StageView, useHealth } from './health'
 import { GeneratorView } from './GeneratorView'
@@ -19,7 +19,7 @@ import { SlmView } from './SlmView'
 import type { StudioViewMode } from '../../core/studio/studio'
 import './studio.css'
 
-type Tab = 'monitor' | 'mixer' | 'slm' | 'calib' | 'recorder' | 'compare' | 'lab' | 'generator' | 'input'
+type Tab = 'monitor' | 'mixer' | 'slm' | 'calib' | 'recorder' | 'compare' | 'lab' | 'generator' | 'input' | 'devices'
 
 const TABS: [Tab, string][] = [
   ['monitor', 'Monitor'],
@@ -30,11 +30,12 @@ const TABS: [Tab, string][] = [
   ['compare', 'Comparador'],
   ['lab', 'Laboratorio'],
   ['generator', 'Generador'],
-  ['input', 'Entrada']
+  ['input', 'Entrada'],
+  ['devices', 'Equipos']
 ]
 
 /** Tabs kept in the measurement view (no mixing or recording) */
-const MEASURE_TABS: Tab[] = ['monitor', 'slm', 'calib', 'compare', 'lab', 'generator', 'input']
+const MEASURE_TABS: Tab[] = ['monitor', 'slm', 'calib', 'compare', 'lab', 'generator', 'input', 'devices']
 
 const VIEW_MODES: [StudioViewMode, string][] = [
   ['stage', 'Escenario'],
@@ -46,7 +47,7 @@ const VIEW_MODES: [StudioViewMode, string][] = [
 let lastTab: Tab = 'monitor'
 
 const SHORTCUTS: [string, string][] = [
-  ['Ctrl+1 … Ctrl+9', 'Cambiar de pestaña'],
+  ['Ctrl+1 … Ctrl+9 · Ctrl+0', 'Cambiar de pestaña'],
   ['Alt+1 · Alt+2 · Alt+3', 'Vista Escenario · Estudio · Medición'],
   ['F11', 'Pantalla completa'],
   ['F · P', 'Monitor: fijar referencia · congelar analizador'],
@@ -59,13 +60,13 @@ const SHORTCUTS: [string, string][] = [
 export function StudioShell({ standalone = false }: { standalone?: boolean }): JSX.Element {
   const { data, update } = useStore()
   const mixer = useMixerState()
-  const engine = useEngineState()
   const [prefs, setPrefs] = useStudioPrefs()
   const [tab, setTabState] = useState<Tab>(lastTab)
   const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([])
   const [help, setHelp] = useState(false)
   const [healthOpen, setHealthOpen] = useState(false)
   const health = useHealth()
+  const profileNote = useAutoProfile()
   const main = useRef<HTMLElement>(null)
   const view = prefs.viewMode
   const tabs = view === 'measure' ? TABS.filter(([t]) => MEASURE_TABS.includes(t)) : TABS
@@ -132,9 +133,10 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement
       const typing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
-      if (e.ctrlKey && !e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
+      if (e.ctrlKey && !e.shiftKey && /^Digit[0-9]$/.test(e.code)) {
         e.preventDefault()
-        const t = tabsRef.current[Number(e.code.slice(5)) - 1]
+        // Ctrl+0 is the tenth tab, like a keyboard row
+        const t = tabsRef.current[(Number(e.code.slice(5)) || 10) - 1]
         if (t) setTab(t[0])
       } else if (e.altKey && /^Digit[1-3]$/.test(e.code)) {
         e.preventDefault()
@@ -171,7 +173,7 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
         ) : (
           <nav className="st-tabs">
             {tabs.map(([id, label], i) => (
-              <button key={id} className={shown === id ? 'on' : ''} onClick={() => setTab(id)} title={`Ctrl+${i + 1}`}>
+              <button key={id} className={shown === id ? 'on' : ''} onClick={() => setTab(id)} title={`Ctrl+${(i + 1) % 10}`}>
                 {label}
               </button>
             ))}
@@ -223,9 +225,6 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
               🎧 {prefs.monitorDb} dB
             </button>
           )}
-          <span className={`st-status ${engine.status}`}>
-            {engine.status === 'running' ? `${engine.sampleRate ? engine.sampleRate / 1000 : '?'} kHz` : engine.status === 'starting' ? '…' : 'Sin señal'}
-          </span>
           <HealthButton items={health} open={healthOpen} onClick={() => setHealthOpen((o) => !o)} />
           <button className="st-btn ghost" onClick={() => setHelp((h) => !h)} title="Atajos de teclado (?)">
             ?
@@ -241,6 +240,7 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
         </div>
       </header>
       <AlarmBanner items={health} />
+      {profileNote && <div className="st-toast">{profileNote}</div>}
       <main className="st-main" ref={main}>
         {view === 'stage' && <StageView items={health} />}
         {view !== 'stage' && (
@@ -258,6 +258,7 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
                 <AudioScreen navigate={() => setTab('monitor')} studio />
               </div>
             )}
+            {shown === 'devices' && <DevicesView />}
           </>
         )}
       </main>

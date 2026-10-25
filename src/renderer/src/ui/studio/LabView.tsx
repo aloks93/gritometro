@@ -6,6 +6,7 @@ import { distortionVerdict, measureDistortion, type DistortionResult } from '../
 import { balanceDb, channelOffset, correlationVerdict, goniometer, offsetToCm, phaseCorrelation, type ChannelOffset } from '../../core/studio/stereo'
 import { useEngineState } from '../hooks'
 import { useStore } from '../store'
+import { saveCanvasPng } from './exports'
 import { generator } from './generator'
 import { useMixerState } from './MixerView'
 import { fitCanvas, Readout, Segmented, useInterval } from './widgets'
@@ -285,7 +286,12 @@ function PhasePanel(): JSX.Element {
             </div>
           )}
           <div className="st-phase">
-            <canvas ref={canvas} className="st-gonio" />
+            <div className="st-gonio-wrap">
+              <canvas ref={canvas} className="st-gonio" />
+              <button className="st-png" onClick={() => void saveCanvasPng(canvas.current, 'goniometro')} title="Guardar el goniómetro (PNG)">
+                PNG
+              </button>
+            </div>
             <div className="st-phase-side">
               <div className="st-corr" title="Correlación de fase: +1 = idénticos, 0 = sin relación, −1 = fase invertida">
                 <div className="st-corr-track">

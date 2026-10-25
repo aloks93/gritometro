@@ -40,7 +40,8 @@ src/renderer/src/
                    correlation, channel offset, goniometer), acoustics (RT60 Schroeder), feedback (howl detector),
                    calibration (calibrator check, IEC tolerance, history per profile, loopback, gain advice),
                    flac (lossless encoder), session (markers/timecode, clip markers, measurement session + report),
-                   health (status lights ok/warning/silence/over/clip/off, level trackers, alarms, hot-plug)
+                   health (status lights ok/warning/silence/over/clip/off, level trackers, alarms, hot-plug),
+                   hardware (device probe, per-device profiles, auto profile switch, CSV helper)
   themes/          Theme contract, registry, one folder per theme
   ui/              React: store (persisted app state), hooks, sound, components/, screens/
   ui/studio/       Studio shell (own scoped CSS, does not use party themes). Views (prefs.viewMode): Escenario
@@ -53,7 +54,8 @@ src/renderer/src/
                    user presets, scenes,
                    stereo bus recording, auto trim; any bus can feed the analyzers),
                    Comparador (takes, synced A/B, blind test, difference curves, session/PDF),
-                   Laboratorio (THD+N, phase/goniometer + mic alignment, room RT60), Generador (signals +
+                   Laboratorio (THD+N, phase/goniometer + mic alignment, room RT60), Equipos (device inventory,
+                   capabilities, profiles per device, engine latency), Generador (signals +
                    latency), playback.ts / recordings (in-memory audio, never persisted)
   App.tsx          router (Route union in ui/nav.ts), theme CSS vars, audio boot
 ```
