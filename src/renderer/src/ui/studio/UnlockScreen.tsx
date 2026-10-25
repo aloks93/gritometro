@@ -1,11 +1,14 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { isValidStudioCode } from '../../core/studio/unlock'
 import { useStore } from '../store'
+import { resolveLang, useStudioTranslation } from './i18n'
 import './studio.css'
 
 /** Access code gate of the standalone studio app; remembered on this PC once accepted */
 export function UnlockScreen(): JSX.Element {
-  const { update } = useStore()
+  const { data, update } = useStore()
+  const root = useRef<HTMLDivElement>(null)
+  useStudioTranslation(resolveLang(data.studio.prefs.language) === 'en', root)
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -29,7 +32,7 @@ export function UnlockScreen(): JSX.Element {
   }
 
   return (
-    <div className="studio st-unlock">
+    <div className="studio st-unlock" ref={root}>
       <form className="st-panel st-unlock-card" onSubmit={submit}>
         <div className="st-brand">
           <span className="st-logo" aria-hidden>

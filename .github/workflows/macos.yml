@@ -1,0 +1,52 @@
+# macOS builds can't be made on Windows: when a release is published, build that edition on a
+# Mac runner and attach the dmg/zip files to it. vX.Y.Z = party app, studio-vX.Y.Z = Gritómetro Studio.
+name: macOS release builds
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach to (vX.Y.Z or studio-vX.Y.Z)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build party edition
+        if: ${{ !startsWith(env.TAG, 'studio-') }}
+        run: npx electron-vite build && npx electron-builder --mac --publish never
+
+      - name: Build studio edition
+        if: ${{ startsWith(env.TAG, 'studio-') }}
+        run: node scripts/build-studio.mjs --mac
+        env:
+          GRIT_EDITION: studio
+
+      - name: Attach to the release
+        run: |
+          dir=dist; case "$TAG" in studio-*) dir=dist-studio;; esac
+          ls -la "$dir"
+          gh release upload "$TAG" "$dir"/*.dmg "$dir"/*.zip --clobber

@@ -45,6 +45,8 @@ export interface StudioPrefs {
   alarmSplDb: number
   /** Switch audio profile when its device is plugged in / the active one disappears */
   autoProfile: boolean
+  /** Studio language; auto = from the system language */
+  language: 'auto' | 'es' | 'en'
 }
 
 export type StudioViewMode = 'stage' | 'studio' | 'measure'
@@ -82,7 +84,8 @@ export function defaultStudioPrefs(): StudioPrefs {
     viewMode: 'studio',
     // Shouting into a mic up close easily passes 100 dB; 110 is where it starts to hurt
     alarmSplDb: 110,
-    autoProfile: false
+    autoProfile: false,
+    language: 'auto'
   }
 }
 

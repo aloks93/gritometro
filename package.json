@@ -1,6 +1,6 @@
 {
   "name": "gritometro",
-  "version": "1.5.0",
+  "version": "2.0.0",
   "description": "Gritómetro: mide quién grita más fuerte. Temas personalizables y modos de reto.",
   "main": "./out/main/index.js",
   "author": "Gritómetro",
@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "build:win": "electron-vite build && electron-builder --win",
-    "build:studio": "node scripts/build-studio.mjs"
+    "build:mac": "electron-vite build && electron-builder --mac",
+    "build:studio": "node scripts/build-studio.mjs",
+    "build:studio:mac": "node scripts/build-studio.mjs --mac"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",

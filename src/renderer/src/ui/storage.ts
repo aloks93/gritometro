@@ -1,4 +1,5 @@
 import type { GritometroApi } from '../../../preload'
+import { localizeCsv, localizeHtml } from './studio/i18n'
 
 declare global {
   interface Window {
@@ -58,6 +59,8 @@ export function flushSaves(): Promise<void> {
 if (typeof window !== 'undefined') window.addEventListener('beforeunload', () => void flushSaves())
 
 export async function saveFile(name: string, content: string, encoding: 'utf8' | 'base64' = 'utf8'): Promise<string | null> {
+  // Exported tables follow the studio language
+  if (encoding === 'utf8' && /\.csv$/i.test(name)) content = localizeCsv(content)
   const a = api()
   if (a) return a.file.save(name, content, encoding)
   const blob =
@@ -110,6 +113,7 @@ export function fromBase64(b64: string): ArrayBuffer {
 
 /** Standalone HTML → PDF (Electron), or the browser's print dialog as a fallback */
 export async function saveHtmlAsPdf(name: string, html: string): Promise<string | null> {
+  html = localizeHtml(html)
   const a = api()
   if (a) return a.file.htmlToPdf(name, html)
   const w = window.open('', '_blank')

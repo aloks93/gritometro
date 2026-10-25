@@ -8,6 +8,7 @@ import { CalibrationView } from './CalibrationView'
 import { CompareView } from './CompareView'
 import { DevicesView, useAutoProfile } from './DevicesView'
 import { generator } from './generator'
+import { resolveLang, useStudioTranslation, type StudioLang, type StudioLangPref } from './i18n'
 import { AlarmBanner, HealthButton, HealthPanel, StageView, useHealth } from './health'
 import { GeneratorView } from './GeneratorView'
 import { LabView } from './LabView'
@@ -58,6 +59,13 @@ const SHORTCUTS: [string, string][] = [
 
 /** Hidden professional interface: metering, recording, mic comparison and test signals */
 export function StudioShell({ standalone = false }: { standalone?: boolean }): JSX.Element {
+  const [prefs] = useStudioPrefs()
+  // Remounting on a language change lets every view render its Spanish source text again
+  const lang = resolveLang(prefs.language)
+  return <StudioBody key={lang} lang={lang} standalone={standalone} />
+}
+
+function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLang }): JSX.Element {
   const { data, update } = useStore()
   const mixer = useMixerState()
   const [prefs, setPrefs] = useStudioPrefs()
@@ -68,6 +76,8 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
   const health = useHealth()
   const profileNote = useAutoProfile()
   const main = useRef<HTMLElement>(null)
+  const root = useRef<HTMLDivElement>(null)
+  useStudioTranslation(lang === 'en', root)
   const view = prefs.viewMode
   const tabs = view === 'measure' ? TABS.filter(([t]) => MEASURE_TABS.includes(t)) : TABS
   const shown: Tab = tabs.some(([t]) => t === tab) ? tab : tabs[0][0]
@@ -157,7 +167,7 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
   const exit = (): void => update('settings', (s) => ({ ...s, appMode: 'party' }))
 
   return (
-    <div className="studio">
+    <div className="studio" ref={root}>
       <header className="st-topbar">
         <div className="st-brand">
           <span className="st-logo" aria-hidden>
@@ -180,6 +190,11 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
           </nav>
         )}
         <div className="st-top-right">
+          <select className="st-output st-lang" value={prefs.language} onChange={(e) => setPrefs({ language: e.target.value as StudioLangPref })} title="Idioma">
+            <option value="auto">🌐 Auto</option>
+            <option value="es">ES</option>
+            <option value="en">EN</option>
+          </select>
           <select className="st-output st-view" value={view} onChange={(e) => setPrefs({ viewMode: e.target.value as StudioViewMode })} title="Vista (Alt+1/2/3)">
             {VIEW_MODES.map(([v, label]) => (
               <option key={v} value={v}>

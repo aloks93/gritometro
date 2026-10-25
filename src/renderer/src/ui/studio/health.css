@@ -365,3 +365,6 @@
   min-width: 220px;
   max-width: 380px;
 }
+.st-top-right .st-lang {
+  max-width: 82px;
+}

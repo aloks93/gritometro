@@ -18,6 +18,20 @@ win:
     - target: portable
       arch: [x64]
   artifactName: Gritometro-Studio-${version}-${arch}.${ext}
+mac:
+  icon: build/icon.png
+  category: public.app-category.music
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  artifactName: Gritometro-Studio-${version}-mac-${arch}.${ext}
+  # No Apple certificate: ad-hoc signature, first launch with right-click → Open
+  identity: '-'
+  hardenedRuntime: false
+  extendInfo:
+    NSMicrophoneUsageDescription: Gritómetro Studio needs the microphone to measure audio.
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

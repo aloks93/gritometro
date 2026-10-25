@@ -1103,7 +1103,7 @@ function StripEditor({
           </div>
           <div className="st-comp-params">
             <Num label="Umbral" value={s.duck.thresholdDb} min={-80} max={0} unit="dB" onChange={(thresholdDb) => onChange({ duck: { ...s.duck, thresholdDb } })} />
-            <Num label="Bajar" value={s.duck.amountDb} min={-40} max={0} unit="dB" onChange={(amountDb) => onChange({ duck: { ...s.duck, amountDb } })} />
+            <Num label="Atenuar" value={s.duck.amountDb} min={-40} max={0} unit="dB" onChange={(amountDb) => onChange({ duck: { ...s.duck, amountDb } })} />
             <Num label="Ataque" value={s.duck.attackMs} min={1} max={500} unit="ms" onChange={(attackMs) => onChange({ duck: { ...s.duck, attackMs } })} />
             <Num label="Liberación" value={s.duck.releaseMs} min={20} max={3000} step={10} unit="ms" onChange={(releaseMs) => onChange({ duck: { ...s.duck, releaseMs } })} />
           </div>

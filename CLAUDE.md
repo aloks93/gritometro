@@ -10,11 +10,16 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
 - `npm run typecheck` – `tsc --noEmit`
 - `npm run build:win` – production build + Windows installer and portable `.exe` in `dist/`
 - `npm run build:studio` – standalone **Gritómetro Studio** (same code, `GRIT_EDITION=studio`) in `dist-studio/`
+- `npm run build:mac` / `npm run build:studio:mac` – macOS dmg/zip (only on a Mac). Releases get them from
+  `.github/workflows/macos.yml`, which builds on a Mac runner when a release is published and attaches the files
 
 ## Editions
 - **Party** (default): the birthday app, with the hidden studio inside. Released as `vX.Y.Z` (marked Latest).
 - **Studio**: `__EDITION__ === 'studio'` (define injected by `electron.vite.config.ts`). Opens straight into `StudioShell standalone` (no exit to party, no Ctrl+Shift+S), behind an access code (`core/studio/unlock.ts`, only the SHA-256 is stored; remembered via `settings.studioUnlocked`). Own appId/productName (`electron-builder.studio.yml`) and own data folder `%APPDATA%/Gritometro Studio`. Released separately as `studio-vX.Y.Z` with `--latest=false`.
 - Studio improvements go to both editions; keep party-only wording out of the studio (`AudioScreen studio` prop).
+- Studio language (ES/EN, `prefs.language`, auto = system): the studio is written in Spanish and `ui/studio/i18n.ts`
+  translates what it renders (MutationObserver), plus confirm(), PDF reports and CSVs. **New studio texts need an
+  English entry in `ui/studio/i18n.en.ts`** (exact text, or a `{0}` pattern for templates). The party app stays Spanish.
 
 ## Architecture (electron-vite layout)
 ```

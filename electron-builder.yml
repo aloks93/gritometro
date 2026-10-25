@@ -14,6 +14,21 @@ win:
     - target: portable
       arch: [x64]
   artifactName: ${productName}-${version}-${arch}.${ext}
+mac:
+  icon: build/icon.png
+  category: public.app-category.music
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  # No Apple certificate: ad-hoc signature, first launch with right-click → Open
+  identity: '-'
+  hardenedRuntime: false
+  extendInfo:
+    NSMicrophoneUsageDescription: Gritómetro mide el volumen de los gritos con el micrófono.
+    NSCameraUsageDescription: Gritómetro puede hacer una foto del ganador.
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
