@@ -85,7 +85,7 @@ export function buildReportHtml(all: MicCandidate[], opts: ReportOptions = {}): 
         <p class="bd">SNR ${s.snr}/55 · nivel ${s.level}/15 · saturación ${s.clipping}/15 · balance ${s.balance}/15</p>
         ${c.notes ? `<p>${escapeHtml(c.notes)}</p>` : ''}
         <ul>${s.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('') || '<li>Sin observaciones.</li>'}</ul>
-        <p class="bd">${m.hum ? `Zumbido ${m.hum.hz} Hz (+${fmt(m.hum.prominenceDb)} dB) · ` : ''}${m.pitchHz ? `Tono medio ${m.pitchHz} Hz · ` : ''}${m.lra !== undefined ? `LRA ${fmt(m.lra)} LU · ` : ''}Duración ${fmt(m.durationS)} s${c.takenAt ? ` · ${new Date(c.takenAt).toLocaleString('es')}` : ''}</p>
+        <p class="bd">${m.pitchHz ? `Tono medio ${m.pitchHz} Hz · ` : ''}${m.lra !== undefined ? `LRA ${fmt(m.lra)} LU · ` : ''}Duración ${fmt(m.durationS)} s${c.takenAt ? ` · ${new Date(c.takenAt).toLocaleString('es')}` : ''}</p>
       </div>`
     })
     .join('')
@@ -104,7 +104,7 @@ export function buildReportHtml(all: MicCandidate[], opts: ReportOptions = {}): 
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
   .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .card { border: 1px solid #ddd; border-radius: 6px; padding: 8px; break-inside: avoid; } .card ul { margin: 4px 0; padding-left: 16px; }
-  .bd { color: #666; margin: 2px 0; } footer { margin-top: 14px; color: #888; font-size: 9px; }
+  .bd { color: #666; margin: 2px 0; } .keep { break-inside: avoid; } h2 { break-after: avoid; } footer { margin-top: 14px; color: #888; font-size: 9px; }
 </style></head><body>
 <header><div><h1>${escapeHtml(opts.title ?? 'Comparación de micrófonos')}</h1>${opts.subtitle ? `<div>${escapeHtml(opts.subtitle)}</div>` : ''}</div>
 <div class="meta">Gritómetro Studio<br>${escapeHtml(date)}</div></header>
@@ -118,8 +118,8 @@ export function buildReportHtml(all: MicCandidate[], opts: ReportOptions = {}): 
 <tbody>${rows || '<tr><td colspan="13">Sin tomas medidas.</td></tr>'}</tbody></table>
 <h2>Respuesta en frecuencia (tercios de octava, normalizada)</h2>
 ${chartSvg(all)}
-<h2>Detalle</h2>
-<div class="cards">${details}</div>
+<section class="keep"><h2>Detalle</h2>
+<div class="cards">${details}</div></section>
 <footer>La puntuación técnica es orientativa (SNR 55, nivel 15, saturación 15, balance tonal 15). La prueba a ciegas con volumen igualado es la referencia subjetiva.</footer>
 </body></html>`
 }

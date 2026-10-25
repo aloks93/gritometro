@@ -1,9 +1,10 @@
+import { memo } from 'react'
 import type { Player } from '../../core/players/players'
 
 const EYE_X: Record<number, number[]> = { 1: [50], 2: [38, 62], 3: [32, 50, 68] }
 
 /** Procedurally drawn little monster for each player (or their uploaded photo) */
-export function MonsterAvatar({ player, size = 64 }: { player: Pick<Player, 'avatar' | 'photo' | 'name'>; size?: number }): JSX.Element {
+export const MonsterAvatar = memo(function MonsterAvatar({ player, size = 64 }: { player: Pick<Player, 'avatar' | 'photo' | 'name'>; size?: number }): JSX.Element {
   if (player.photo) {
     return <img className="avatar-photo" src={player.photo} width={size} height={size} alt={player.name} />
   }
@@ -54,4 +55,4 @@ export function MonsterAvatar({ player, size = 64 }: { player: Pick<Player, 'ava
       )}
     </svg>
   )
-}
+})

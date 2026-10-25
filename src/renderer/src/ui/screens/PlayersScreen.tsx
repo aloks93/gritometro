@@ -3,7 +3,7 @@ import { createPlayer, handicapFor, randomAvatar, type Player } from '../../core
 import { Panel, Screen } from '../components/Layout'
 import { MonsterAvatar } from '../components/MonsterAvatar'
 import type { Navigate } from '../nav'
-import { readFileAsDataUrl } from '../storage'
+import { readImageScaled } from '../storage'
 import { useStore } from '../store'
 
 export function PlayersScreen({ navigate }: { navigate: Navigate }): JSX.Element {
@@ -25,7 +25,7 @@ export function PlayersScreen({ navigate }: { navigate: Navigate }): JSX.Element
   const remove = (id: string): void => update('players', (ps) => ps.filter((p) => p.id !== id))
 
   const uploadPhoto = async (id: string, file?: File): Promise<void> => {
-    if (file) edit(id, { photo: await readFileAsDataUrl(file) })
+    if (file) edit(id, { photo: await readImageScaled(file, 320) })
   }
 
   return (

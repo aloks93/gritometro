@@ -133,7 +133,8 @@ export function AudioScreen({ navigate }: { navigate: Navigate }): JSX.Element {
   const calibrate = async (): Promise<void> => {
     setCalibrating(true)
     const frames = await audioEngine.record(2500)
-    setProfile({ noiseFloorDb: noiseFloorFrom(frames) })
+    // No readings = the mic stopped meanwhile: keep the previous floor instead of a made-up one
+    if (frames.length > 0) setProfile({ noiseFloorDb: noiseFloorFrom(frames) })
     setCalibrating(false)
   }
 

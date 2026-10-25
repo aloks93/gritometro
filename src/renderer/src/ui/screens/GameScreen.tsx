@@ -58,7 +58,7 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
 
   const turn = useMemo(() => mode.nextTurn(state), [mode, state])
   const standings = useMemo(() => mode.standings(state, ctx), [mode, state, ctx])
-  const view = mode.view?.(state, ctx)
+  const view = useMemo(() => mode.view?.(state, ctx), [mode, state, ctx])
   const player = turn ? ctx.players.find((p) => p.id === turn.playerId) : undefined
   const team = turn?.teamId ? ctx.teams.find((t) => t.id === turn.teamId) : undefined
   // Aiming at a target is about control, not power: no age bonus there
@@ -87,8 +87,8 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
       minBurstMs: settings.minBurstMs,
       multiplier
     })
-    // The very first scream of the party isn't a "record" yet
-    const isRecord = data.records.length > 0 && score.score > bestRecord
+    // The very first scream of the party isn't a "record" yet, and aiming at a target isn't about power
+    const isRecord = data.records.length > 0 && score.score > bestRecord && t.target === undefined
     update('records', (rs) => [
       ...rs,
       {
@@ -125,7 +125,7 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
       const timer = setInterval(() => {
         const ms = performance.now() - start
         setElapsed(ms / 1000)
-        if (ms >= limit) end()
+        if (ms >= limit || !alive.current) end()
       }, 100)
     })
 
@@ -148,9 +148,9 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
         setElapsed(watcher.heldMs(r.t) / 1000)
         if (ended || watcher.heldMs(r.t) >= limit) end()
       })
-      // Readings stop if the mic drops out; don't leave the turn hanging
+      // Readings stop if the mic drops out (or the screen closed); don't leave the turn hanging
       const guard = setInterval(() => {
-        if (audioEngine.state.status !== 'running') end()
+        if (audioEngine.state.status !== 'running' || !alive.current) end()
       }, 500)
     })
 

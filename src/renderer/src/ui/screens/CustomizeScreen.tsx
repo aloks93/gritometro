@@ -3,7 +3,7 @@ import { FONT_OPTIONS, TOKEN_LABELS, type CustomTheme, type ThemeTexts, type The
 import { builtInThemes, customFromBuiltIn, getBuiltIn, isCustomTheme, resolveTheme } from '../../themes/registry'
 import { Field, Panel, Screen } from '../components/Layout'
 import type { Navigate } from '../nav'
-import { openTextFile, readFileAsDataUrl, saveFile } from '../storage'
+import { openTextFile, readFileAsDataUrl, readImageScaled, saveFile } from '../storage'
 import { useStore } from '../store'
 
 const TEXT_FIELDS: { key: keyof Omit<ThemeTexts, 'levels'>; label: string }[] = [
@@ -44,10 +44,11 @@ export function CustomizeScreen({ navigate }: { navigate: Navigate }): JSX.Eleme
     update('themeId', custom.baseId)
   }
 
-  const upload = async (file: File | undefined, apply: (url: string) => void): Promise<void> => {
+  const upload = async (file: File | undefined, apply: (url: string) => void, image?: { maxSide: number; type: 'image/jpeg' | 'image/png' }): Promise<void> => {
     if (!file) return
-    if (file.size > 8 * 1024 * 1024) return setMsg('El archivo es muy grande (máx. 8 MB).')
-    apply(await readFileAsDataUrl(file))
+    // Images get scaled down below, so only sounds need the strict limit
+    if (file.size > (image ? 25 : 8) * 1024 * 1024) return setMsg(`El archivo es muy grande (máx. ${image ? 25 : 8} MB).`)
+    apply(image ? await readImageScaled(file, image.maxSide, image.type) : await readFileAsDataUrl(file))
   }
 
   const exportTheme = async (): Promise<void> => {
@@ -174,8 +175,8 @@ export function CustomizeScreen({ navigate }: { navigate: Navigate }): JSX.Eleme
             </Panel>
 
             <Panel title="Imágenes y sonidos">
-              <MediaField label="Imagen de fondo" value={custom.images.background} kind="image" onPick={(f) => upload(f, (url) => edit((c) => ({ ...c, images: { ...c.images, background: url } })))} onClear={() => edit((c) => ({ ...c, images: { ...c.images, background: undefined } }))} />
-              <MediaField label="Logo" value={custom.images.logo} kind="image" onPick={(f) => upload(f, (url) => edit((c) => ({ ...c, images: { ...c.images, logo: url } })))} onClear={() => edit((c) => ({ ...c, images: { ...c.images, logo: undefined } }))} />
+              <MediaField label="Imagen de fondo" value={custom.images.background} kind="image" onPick={(f) => upload(f, (url) => edit((c) => ({ ...c, images: { ...c.images, background: url } })), { maxSide: 1920, type: 'image/jpeg' })} onClear={() => edit((c) => ({ ...c, images: { ...c.images, background: undefined } }))} />
+              <MediaField label="Logo" value={custom.images.logo} kind="image" onPick={(f) => upload(f, (url) => edit((c) => ({ ...c, images: { ...c.images, logo: url } })), { maxSide: 640, type: 'image/png' })} onClear={() => edit((c) => ({ ...c, images: { ...c.images, logo: undefined } }))} />
               <MediaField label="Sonido de ganador" value={custom.sounds.win} kind="audio" onPick={(f) => upload(f, (url) => edit((c) => ({ ...c, sounds: { ...c.sounds, win: url } })))} onClear={() => edit((c) => ({ ...c, sounds: { ...c.sounds, win: undefined } }))} />
               <MediaField label="Sonido de nuevo récord" value={custom.sounds.record} kind="audio" onPick={(f) => upload(f, (url) => edit((c) => ({ ...c, sounds: { ...c.sounds, record: url } })))} onClear={() => edit((c) => ({ ...c, sounds: { ...c.sounds, record: undefined } }))} />
               <p className="field-hint">Si no subes sonidos se usan los efectos del tema base. Las imágenes se guardan dentro del tema.</p>

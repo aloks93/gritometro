@@ -13,14 +13,20 @@ export function WinnerPhoto({ name, detail, onClose }: { name: string; detail: s
 
   useEffect(() => {
     let stream: MediaStream | null = null
+    let closed = false
     navigator.mediaDevices
       .getUserMedia({ video: { width: 1280, height: 720 }, audio: false })
       .then((s) => {
+        // Closed before the camera answered: release it or the webcam light stays on
+        if (closed) return s.getTracks().forEach((t) => t.stop())
         stream = s
         if (video.current) video.current.srcObject = s
       })
-      .catch(() => setError('No se encontró una cámara web.'))
-    return () => stream?.getTracks().forEach((t) => t.stop())
+      .catch(() => !closed && setError('No se encontró una cámara web.'))
+    return () => {
+      closed = true
+      stream?.getTracks().forEach((t) => t.stop())
+    }
   }, [])
 
   const capture = (): void => {

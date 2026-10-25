@@ -135,3 +135,25 @@ export async function openBinaryFiles(extensions: string[]): Promise<{ name: str
     input.click()
   })
 }
+
+/**
+ * Reads an image scaled down to `maxSide` px, so photos straight from a phone (several MB)
+ * don't bloat the saved JSON. GIF/SVG keep their original data (animation/vector).
+ */
+export async function readImageScaled(file: File, maxSide: number, type: 'image/jpeg' | 'image/png' = 'image/jpeg'): Promise<string> {
+  if (/gif|svg/i.test(file.type)) return readFileAsDataUrl(file)
+  try {
+    const bitmap = await createImageBitmap(file)
+    const k = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(bitmap.width * k))
+    canvas.height = Math.max(1, Math.round(bitmap.height * k))
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    bitmap.close()
+    const scaled = canvas.toDataURL(type, 0.86)
+    // Already-small files may grow when re-encoded: keep whichever is smaller
+    return scaled.length < file.size * 1.37 ? scaled : readFileAsDataUrl(file)
+  } catch {
+    return readFileAsDataUrl(file)
+  }
+}

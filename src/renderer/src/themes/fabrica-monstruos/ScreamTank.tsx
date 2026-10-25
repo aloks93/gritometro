@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import type { MeterProps } from '../Theme'
 
 const TOP = 60
@@ -15,6 +16,9 @@ const BUBBLES = [
 
 /** Scream canister: glass tube that fills with glowing scream energy */
 export function ScreamTank({ level, held, active, score, clipped, compact }: MeterProps): JSX.Element {
+  // Unique ids: several tanks can be on screen (team tanks + stage meter)
+  const uid = useId().replace(/:/g, '')
+  const id = (name: string): string => `${uid}-${name}`
   const fillOffset = (1 - level) * HEIGHT
   const heldY = BOTTOM - held * HEIGHT
   return (
@@ -25,32 +29,32 @@ export function ScreamTank({ level, held, active, score, clipped, compact }: Met
       aria-label={`Nivel de grito ${Math.round(level * 100)}%`}
     >
       <defs>
-        <linearGradient id="tank-metal" x1="0" x2="1">
+        <linearGradient id={id('metal')} x1="0" x2="1">
           <stop offset="0" stopColor="#5d7184" />
           <stop offset="0.35" stopColor="#d7e2ea" />
           <stop offset="0.6" stopColor="#8fa3b4" />
           <stop offset="1" stopColor="#4a5b6b" />
         </linearGradient>
-        <linearGradient id="tank-energy" x1="0" y1="1" x2="0" y2="0">
+        <linearGradient id={id('energy')} x1="0" y1="1" x2="0" y2="0">
           <stop offset="0" stopColor="var(--c-meterLow)" />
           <stop offset="0.5" stopColor="var(--c-meterMid)" />
           <stop offset="1" stopColor="var(--c-meterHigh)" />
         </linearGradient>
-        <filter id="tank-glow" x="-30%" y="-30%" width="160%" height="160%">
+        <filter id={id('glow')} x="-30%" y="-30%" width="160%" height="160%">
           <feGaussianBlur stdDeviation="6" result="b" />
           <feMerge>
             <feMergeNode in="b" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
-        <clipPath id="tank-glass">
+        <clipPath id={id('glass')}>
           <rect x="52" y={TOP} width="116" height={HEIGHT} rx="16" />
         </clipPath>
       </defs>
 
       {/* inlet pipe + top cap */}
-      <rect x="96" y="2" width="28" height="22" rx="4" fill="url(#tank-metal)" />
-      <rect x="36" y="20" width="148" height="44" rx="12" fill="url(#tank-metal)" stroke="#2c3a47" strokeWidth="2" />
+      <rect x="96" y="2" width="28" height="22" rx="4" fill={`url(#${id('metal')})`} />
+      <rect x="36" y="20" width="148" height="44" rx="12" fill={`url(#${id('metal')})`} stroke="#2c3a47" strokeWidth="2" />
       {[56, 86, 134, 164].map((x) => (
         <circle key={x} cx={x} cy="42" r="5" fill="#2c3a47" opacity="0.7" />
       ))}
@@ -60,9 +64,9 @@ export function ScreamTank({ level, held, active, score, clipped, compact }: Met
       <rect x="52" y={TOP} width="116" height={HEIGHT} rx="16" fill="rgba(160,220,255,0.10)" />
 
       {/* energy */}
-      <g clipPath="url(#tank-glass)">
+      <g clipPath={`url(#${id('glass')})`}>
         <g className="tank-fill" style={{ transform: `translateY(${fillOffset}px)` }}>
-          <rect x="40" y={TOP} width="140" height={HEIGHT + 20} fill="url(#tank-energy)" filter="url(#tank-glow)" />
+          <rect x="40" y={TOP} width="140" height={HEIGHT + 20} fill={`url(#${id('energy')})`} filter={`url(#${id('glow')})`} />
           <ellipse cx="110" cy={TOP + 2} rx="62" ry="7" fill="rgba(255,255,255,0.45)" />
         </g>
         {active &&
@@ -107,7 +111,7 @@ export function ScreamTank({ level, held, active, score, clipped, compact }: Met
       )}
 
       {/* bottom cap + label plate */}
-      <rect x="36" y={BOTTOM - 4} width="148" height="50" rx="12" fill="url(#tank-metal)" stroke="#2c3a47" strokeWidth="2" />
+      <rect x="36" y={BOTTOM - 4} width="148" height="50" rx="12" fill={`url(#${id('metal')})`} stroke="#2c3a47" strokeWidth="2" />
       <rect x="66" y={BOTTOM + 8} width="88" height="26" rx="5" fill="#1d2b38" />
       <text x="110" y={BOTTOM + 27} textAnchor="middle" fontSize="15" fill="var(--c-primary)" fontFamily="var(--font-display)">
         GRITOS

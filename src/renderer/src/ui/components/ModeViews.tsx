@@ -1,7 +1,9 @@
+import { memo } from 'react'
 import type { ModeView, Standing } from '../../core/game/GameMode'
 import { Meter } from './Meter'
 
-export function StandingsList({ standings, highlight }: { standings: Standing[]; highlight?: string }): JSX.Element {
+// Memoized: the game screen re-renders on every meter frame, these only change per turn
+export const StandingsList = memo(function StandingsList({ standings, highlight }: { standings: Standing[]; highlight?: string }): JSX.Element {
   if (standings.length === 0) return <p className="muted">Aún no hay resultados.</p>
   return (
     <ol className="standings">
@@ -14,9 +16,9 @@ export function StandingsList({ standings, highlight }: { standings: Standing[];
       ))}
     </ol>
   )
-}
+})
 
-export function ModeViewPanel({ view }: { view: ModeView }): JSX.Element {
+export const ModeViewPanel = memo(function ModeViewPanel({ view }: { view: ModeView }): JSX.Element {
   if (view.type === 'bracket') {
     return (
       <div className="bracket">
@@ -72,4 +74,4 @@ export function ModeViewPanel({ view }: { view: ModeView }): JSX.Element {
       <small className="muted">Al mejor de {view.bestOf}</small>
     </div>
   )
-}
+})
