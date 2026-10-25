@@ -8,6 +8,7 @@ import { useStore } from '../store'
 import { CalibrationView } from './CalibrationView'
 import { CompareView } from './CompareView'
 import { generator } from './generator'
+import { AlarmBanner, HealthButton, HealthPanel, StageView, useHealth } from './health'
 import { GeneratorView } from './GeneratorView'
 import { LabView } from './LabView'
 import { MixerView, useMixerState } from './MixerView'
@@ -15,6 +16,7 @@ import { MonitorView, useStudioPrefs } from './MonitorView'
 import { setPlaybackDevice, stopPlayback } from './playback'
 import { RecorderView } from './RecorderView'
 import { SlmView } from './SlmView'
+import type { StudioViewMode } from '../../core/studio/studio'
 import './studio.css'
 
 type Tab = 'monitor' | 'mixer' | 'slm' | 'calib' | 'recorder' | 'compare' | 'lab' | 'generator' | 'input'
@@ -31,11 +33,21 @@ const TABS: [Tab, string][] = [
   ['input', 'Entrada']
 ]
 
+/** Tabs kept in the measurement view (no mixing or recording) */
+const MEASURE_TABS: Tab[] = ['monitor', 'slm', 'calib', 'compare', 'lab', 'generator', 'input']
+
+const VIEW_MODES: [StudioViewMode, string][] = [
+  ['stage', 'Escenario'],
+  ['studio', 'Estudio'],
+  ['measure', 'Medición']
+]
+
 // Remembered while the app is open so leaving and re-entering the studio keeps the tab
 let lastTab: Tab = 'monitor'
 
 const SHORTCUTS: [string, string][] = [
   ['Ctrl+1 … Ctrl+9', 'Cambiar de pestaña'],
+  ['Alt+1 · Alt+2 · Alt+3', 'Vista Escenario · Estudio · Medición'],
   ['F11', 'Pantalla completa'],
   ['F · P', 'Monitor: fijar referencia · congelar analizador'],
   ['R · M', 'Grabadora: grabar/detener · marcador'],
@@ -52,7 +64,16 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
   const [tab, setTabState] = useState<Tab>(lastTab)
   const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([])
   const [help, setHelp] = useState(false)
+  const [healthOpen, setHealthOpen] = useState(false)
+  const health = useHealth()
   const main = useRef<HTMLElement>(null)
+  const view = prefs.viewMode
+  const tabs = view === 'measure' ? TABS.filter(([t]) => MEASURE_TABS.includes(t)) : TABS
+  const shown: Tab = tabs.some(([t]) => t === tab) ? tab : tabs[0][0]
+  const tabsRef = useRef(tabs)
+  tabsRef.current = tabs
+  const setPrefsRef = useRef(setPrefs)
+  setPrefsRef.current = setPrefs
   const setTab = (t: Tab): void => {
     lastTab = t
     setTabState(t)
@@ -113,11 +134,18 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
       const typing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
       if (e.ctrlKey && !e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
         e.preventDefault()
-        setTab(TABS[Number(e.code.slice(5)) - 1][0])
+        const t = tabsRef.current[Number(e.code.slice(5)) - 1]
+        if (t) setTab(t[0])
+      } else if (e.altKey && /^Digit[1-3]$/.test(e.code)) {
+        e.preventDefault()
+        setPrefsRef.current({
+          viewMode: VIEW_MODES[Number(e.code.slice(5)) - 1][0]
+        })
       } else if (!typing && e.key === '?') {
         setHelp((h) => !h)
       } else if (e.key === 'Escape') {
         setHelp(false)
+        setHealthOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -138,14 +166,25 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
           </span>
           <b>Gritómetro</b> <span>Studio</span>
         </div>
-        <nav className="st-tabs">
-          {TABS.map(([id, label], i) => (
-            <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)} title={`Ctrl+${i + 1}`}>
-              {label}
-            </button>
-          ))}
-        </nav>
+        {view === 'stage' ? (
+          <span className="st-stage-title">Vista de escenario</span>
+        ) : (
+          <nav className="st-tabs">
+            {tabs.map(([id, label], i) => (
+              <button key={id} className={shown === id ? 'on' : ''} onClick={() => setTab(id)} title={`Ctrl+${i + 1}`}>
+                {label}
+              </button>
+            ))}
+          </nav>
+        )}
         <div className="st-top-right">
+          <select className="st-output st-view" value={view} onChange={(e) => setPrefs({ viewMode: e.target.value as StudioViewMode })} title="Vista (Alt+1/2/3)">
+            {VIEW_MODES.map(([v, label]) => (
+              <option key={v} value={v}>
+                ▦ {label}
+              </option>
+            ))}
+          </select>
           <select
             className="st-output"
             value={prefs.outputDeviceId ?? ''}
@@ -185,8 +224,9 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
             </button>
           )}
           <span className={`st-status ${engine.status}`}>
-            <i /> {engine.status === 'running' ? `${engine.sampleRate ? engine.sampleRate / 1000 : '?'} kHz` : engine.status === 'starting' ? '…' : 'Sin señal'}
+            {engine.status === 'running' ? `${engine.sampleRate ? engine.sampleRate / 1000 : '?'} kHz` : engine.status === 'starting' ? '…' : 'Sin señal'}
           </span>
+          <HealthButton items={health} open={healthOpen} onClick={() => setHealthOpen((o) => !o)} />
           <button className="st-btn ghost" onClick={() => setHelp((h) => !h)} title="Atajos de teclado (?)">
             ?
           </button>
@@ -200,21 +240,28 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
           )}
         </div>
       </header>
+      <AlarmBanner items={health} />
       <main className="st-main" ref={main}>
-        {tab === 'monitor' && <MonitorView />}
-        {tab === 'mixer' && <MixerView />}
-        {tab === 'slm' && <SlmView />}
-        {tab === 'calib' && <CalibrationView />}
-        {tab === 'recorder' && <RecorderView />}
-        {tab === 'compare' && <CompareView />}
-        {tab === 'lab' && <LabView />}
-        {tab === 'generator' && <GeneratorView />}
-        {tab === 'input' && (
-          <div className="st-embedded">
-            <AudioScreen navigate={() => setTab('monitor')} studio />
-          </div>
+        {view === 'stage' && <StageView items={health} />}
+        {view !== 'stage' && (
+          <>
+            {shown === 'monitor' && <MonitorView />}
+            {shown === 'mixer' && <MixerView />}
+            {shown === 'slm' && <SlmView />}
+            {shown === 'calib' && <CalibrationView />}
+            {shown === 'recorder' && <RecorderView />}
+            {shown === 'compare' && <CompareView />}
+            {shown === 'lab' && <LabView />}
+            {shown === 'generator' && <GeneratorView />}
+            {shown === 'input' && (
+              <div className="st-embedded">
+                <AudioScreen navigate={() => setTab('monitor')} studio />
+              </div>
+            )}
+          </>
         )}
       </main>
+      {healthOpen && <HealthPanel items={health} onClose={() => setHealthOpen(false)} />}
       {help && (
         <div className="st-help" onClick={() => setHelp(false)}>
           <div className="st-panel" onClick={(e) => e.stopPropagation()}>

@@ -39,10 +39,13 @@ src/renderer/src/
                    studio (StudioData + prefs, session files), distortion (FFT, THD/THD+N), stereo (phase
                    correlation, channel offset, goniometer), acoustics (RT60 Schroeder), feedback (howl detector),
                    calibration (calibrator check, IEC tolerance, history per profile, loopback, gain advice),
-                   flac (lossless encoder), session (markers/timecode, clip markers, measurement session + report)
+                   flac (lossless encoder), session (markers/timecode, clip markers, measurement session + report),
+                   health (status lights ok/warning/silence/over/clip/off, level trackers, alarms, hot-plug)
   themes/          Theme contract, registry, one folder per theme
   ui/              React: store (persisted app state), hooks, sound, components/, screens/
-  ui/studio/       Studio shell (own scoped CSS, does not use party themes): Monitor (meters, LUFS,
+  ui/studio/       Studio shell (own scoped CSS, does not use party themes). Views (prefs.viewMode): Escenario
+                   (big meters, health.tsx StageView), Estudio (all tabs), Medición (measurement tabs only);
+                   health LEDs + panel + alarm banner in the topbar. Tabs: Monitor (meters, LUFS,
                    tuner, FFT/RTA/spectrogram/waterfall, scope, headphone monitoring), Sonómetro, Calibración, Grabadora (WAV/FLAC, markers,
                    measurement session JSON/PDF),
                    Mezclador (virtual console: strips with HPF/notch/gate/EQ/comp/limiter/delay/ducking → A/B buses,

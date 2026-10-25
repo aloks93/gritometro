@@ -1,0 +1,344 @@
+/* Health lights, alarm banner and the stage view. Uses the studio tokens from studio.css. */
+.studio {
+  --st-silence: #3fb6ff;
+  --st-over: #b48cff;
+}
+.st-led {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #3a414d;
+}
+.st-led.ok {
+  background: var(--st-ok);
+  box-shadow: 0 0 5px var(--st-ok);
+}
+.st-led.warning {
+  background: var(--st-warn);
+  box-shadow: 0 0 5px var(--st-warn);
+}
+.st-led.silence {
+  background: var(--st-silence);
+}
+.st-led.over {
+  background: var(--st-over);
+  box-shadow: 0 0 6px var(--st-over);
+}
+.st-led.clip {
+  background: var(--st-bad);
+  box-shadow: 0 0 8px var(--st-bad);
+  animation: st-blink 0.6s steps(2) infinite;
+}
+.st-health-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #0f1115;
+  border: 1px solid var(--st-border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  cursor: pointer;
+  color: var(--st-text);
+}
+.st-health-btn.open {
+  border-color: var(--st-accent);
+}
+.st-health-label {
+  margin-left: 4px;
+  font: 11px var(--st-mono);
+  white-space: nowrap;
+}
+.st-health-label.warning {
+  color: var(--st-warn);
+}
+.st-health-label.clip {
+  color: var(--st-bad);
+}
+.st-health-label.over {
+  color: var(--st-over);
+}
+.st-health-panel {
+  position: fixed;
+  top: 52px;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 100vw);
+  overflow-y: auto;
+  z-index: 15;
+  background: var(--st-panel);
+  border-left: 1px solid var(--st-border);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  padding: 1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8em;
+}
+.st-health-panel h3 {
+  margin: 0 0 0.4em;
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--st-muted);
+}
+.st-health-panel ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.st-health-panel li {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 5px 6px;
+  background: #0f1115;
+  border-radius: 4px;
+}
+.st-health-panel li b {
+  display: block;
+  font-size: 0.9em;
+}
+.st-health-panel li small {
+  color: var(--st-muted);
+}
+.st-chip {
+  font: 700 10px var(--st-mono);
+  text-align: center;
+  padding: 3px 0;
+  border-radius: 3px;
+  color: #111;
+  background: #3a414d;
+}
+.st-chip.ok {
+  background: var(--st-ok);
+}
+.st-chip.warning {
+  background: var(--st-warn);
+}
+.st-chip.silence {
+  background: var(--st-silence);
+}
+.st-chip.over {
+  background: var(--st-over);
+}
+.st-chip.clip {
+  background: var(--st-bad);
+  color: #fff;
+}
+.st-chip.off {
+  color: var(--st-text);
+}
+
+.st-alarm {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+  padding: 0.5em 1em;
+  flex-shrink: 0;
+  font-size: 0.9em;
+}
+.st-alarm b {
+  font: 700 1.1em var(--st-mono);
+}
+.st-alarm.clip {
+  background: var(--st-bad);
+  color: #fff;
+}
+.st-alarm.clip b {
+  animation: st-blink 1s steps(2) infinite;
+}
+.st-alarm.over {
+  background: var(--st-over);
+  color: #111;
+}
+.st-alarm span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-alarm .st-btn {
+  color: inherit;
+  border-color: currentColor;
+}
+
+.st-stage-title {
+  font: 600 0.9em var(--st-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--st-muted);
+}
+.st-view {
+  max-width: 130px;
+}
+.st-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+  min-height: 100%;
+}
+.st-stage-head {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1em;
+}
+.st-stage-big {
+  background: var(--st-panel);
+  border: 2px solid var(--st-border);
+  border-radius: 8px;
+  padding: 0.6em 1em;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.st-stage-big small {
+  color: var(--st-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.8em;
+}
+.st-stage-big b {
+  font: 700 clamp(2.4em, 6vw, 5em) / 1.05 var(--st-mono);
+}
+.st-stage-big b.st-stage-state {
+  font-size: clamp(1.6em, 4vw, 3.2em);
+}
+.st-stage-big i {
+  font-style: normal;
+  color: var(--st-muted);
+}
+.st-stage-big.ok {
+  border-color: var(--st-ok);
+}
+.st-stage-big.warning {
+  border-color: var(--st-warn);
+}
+.st-stage-big.over {
+  border-color: var(--st-over);
+  color: var(--st-over);
+}
+.st-stage-big.clip {
+  border-color: var(--st-bad);
+  color: var(--st-bad);
+}
+.st-stage-meters {
+  flex: 1;
+  display: flex;
+  gap: 0.8em;
+  min-height: 340px;
+  overflow-x: auto;
+}
+.st-stage-sep {
+  width: 2px;
+  background: var(--st-border);
+  flex-shrink: 0;
+}
+.st-stage-meter {
+  flex: 1 0 110px;
+  max-width: 220px;
+  display: grid;
+  grid-template-rows: 1fr auto auto auto auto;
+  gap: 4px;
+  padding: 0.6em;
+  background: var(--st-panel);
+  border: 2px solid var(--st-border);
+  border-radius: 8px;
+  text-align: center;
+  min-width: 0;
+}
+.st-stage-meter.ok {
+  border-color: rgba(74, 222, 128, 0.5);
+}
+.st-stage-meter.warning {
+  border-color: var(--st-warn);
+}
+.st-stage-meter.silence {
+  border-color: var(--st-silence);
+}
+.st-stage-meter.over {
+  border-color: var(--st-over);
+}
+.st-stage-meter.clip {
+  border-color: var(--st-bad);
+  box-shadow: 0 0 20px rgba(255, 77, 94, 0.4);
+}
+.st-stage-track {
+  position: relative;
+  min-height: 200px;
+  background: #0b0d10;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.st-stage-track i {
+  position: absolute;
+  inset: 0;
+  transform-origin: bottom;
+  transform: scaleY(0);
+  background: linear-gradient(to top, #2fbf6a 0%, #2fbf6a 70%, #ffd84d 85%, #ff4d5e 97%);
+}
+.st-stage-track b {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--st-text);
+}
+.st-stage-track b.clip {
+  background: var(--st-bad);
+}
+/* The topbar gets crowded with the mixer on: let the selects shrink first */
+.st-top-right .st-output {
+  max-width: 120px;
+}
+.st-top-right .st-view {
+  max-width: 108px;
+}
+.st-stage-track span {
+  position: absolute;
+  left: 4px;
+  font: 10px var(--st-mono);
+  color: rgba(255, 255, 255, 0.45);
+  transform: translateY(50%);
+}
+.st-stage-meter code {
+  font: 700 1.6em var(--st-mono);
+}
+.st-stage-meter strong {
+  font-size: 1.1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-stage-meter small {
+  color: var(--st-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-stage-meter em {
+  font: 700 0.8em var(--st-mono);
+  font-style: normal;
+  color: var(--st-muted);
+}
+.st-stage-meter.clip em {
+  color: var(--st-bad);
+}
+.st-stage-meter.warning em {
+  color: var(--st-warn);
+}
+.st-stage-meter.silence em {
+  color: var(--st-silence);
+}
+.st-stage-scope {
+  height: 90px;
+}
+@media (max-width: 900px) {
+  .st-stage-head {
+    grid-template-columns: 1fr 1fr;
+  }
+}

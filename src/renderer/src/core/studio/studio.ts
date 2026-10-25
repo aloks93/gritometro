@@ -39,7 +39,13 @@ export interface StudioPrefs {
   outputDeviceId: string | null
   /** What the analyzers listen to: the profile's input, or a mixer bus id */
   analysisSource: 'input' | string
+  /** Stage = big meters only, studio = every tab, measure = measurement tabs only */
+  viewMode: StudioViewMode
+  /** SPL above which the health panel raises an "over" alarm */
+  alarmSplDb: number
 }
+
+export type StudioViewMode = 'stage' | 'studio' | 'measure'
 
 export interface StudioData {
   candidates: MicCandidate[]
@@ -70,7 +76,10 @@ export function defaultStudioPrefs(): StudioPrefs {
     loudnessTarget: -14,
     monitorDb: null,
     outputDeviceId: null,
-    analysisSource: 'input'
+    analysisSource: 'input',
+    viewMode: 'studio',
+    // Shouting into a mic up close easily passes 100 dB; 110 is where it starts to hurt
+    alarmSplDb: 110
   }
 }
 
