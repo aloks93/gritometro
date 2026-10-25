@@ -31,6 +31,8 @@ import {
   saveUserPreset,
   selectUse,
   serializePreset,
+  USE_GROUPS,
+  useGroupOf,
   USES,
   VOICE_REGIONS,
   type AutoSetupResult,
@@ -434,14 +436,9 @@ function PresetBar({ cfg, set, on, setMsg, onAssistant }: { cfg: ProcessorConfig
       <label className="vp-field">
         <span>Uso</span>
         <select value={cfg.useId} onChange={(e) => set((c) => selectUse(c, e.target.value))} title={USES.find((u) => u.id === cfg.useId)?.hint}>
-          {(
-            [
-              ['voice', 'Voz'],
-              ['instrument', 'Instrumentos']
-            ] as const
-          ).map(([src, label]) => (
-            <optgroup key={src} label={label}>
-              {USES.filter((u) => u.source === src).map((u) => (
+          {USE_GROUPS.map(([group, label]) => (
+            <optgroup key={group} label={label}>
+              {USES.filter((u) => useGroupOf(u) === group).map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name}
                 </option>

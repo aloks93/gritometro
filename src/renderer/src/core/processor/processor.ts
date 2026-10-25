@@ -368,6 +368,13 @@ export const USES: UsePreset[] = [
   { id: 'guitar-drive', name: 'Guitarra eléctrica · distorsión', hint: 'Ampli saturado, puerta contra el ruido entre riffs y sin arenilla arriba.', source: 'instrument', defaultMic: 'di' },
   { id: 'guitar-acoustic', name: 'Guitarra acústica', hint: 'Cuerpo sin retumbe de la boca, brillo de cuerdas y dinámica natural.', source: 'instrument', defaultMic: 'sdc' },
   { id: 'keys', name: 'Teclado / piano', hint: 'Rango completo intacto, solo control de picos.', source: 'instrument', defaultMic: 'di' },
+  { id: 'drum-kick', name: 'Batería · bombo', hint: 'Grave profundo y click del parche, sin cartón en 300–400 Hz; puerta que solo abre con el bombo.', source: 'instrument', defaultMic: 'kick-dyn' },
+  { id: 'drum-snare', name: 'Batería · caja', hint: 'Cuerpo en 200 Hz y chasquido arriba, sin el anillo metálico; puerta que ignora el bombo.', source: 'instrument', defaultMic: 'instrument-dyn' },
+  { id: 'drum-toms', name: 'Batería · toms', hint: 'Golpe redondo y ataque, sin cartón; la puerta deja sonar la cola del tom.', source: 'instrument', defaultMic: 'instrument-dyn' },
+  { id: 'drum-hihat', name: 'Batería · hi-hat / ride', hint: 'Solo el metal: paso alto firme para quitar caja y bombo, brillo sin estridencia.', source: 'instrument', defaultMic: 'sdc' },
+  { id: 'drum-overheads', name: 'Batería · overheads', hint: 'La imagen de toda la batería y los platos: graves limpios, platos sin agresividad.', source: 'instrument', defaultMic: 'sdc' },
+  { id: 'drum-kit', name: 'Batería completa · un micrófono', hint: 'Una sola toma para todo el kit: graves y brillo, y compresión en paralelo para que pegue.', source: 'instrument', defaultMic: 'condenser' },
+  { id: 'drum-electronic', name: 'Batería electrónica', hint: 'Módulo por línea: rango completo y solo control de picos.', source: 'instrument', defaultMic: 'di' },
   { id: 'percussion', name: 'Cajón / percusión', hint: 'Golpe firme con ataque rápido, sin caja en 400 Hz.', source: 'instrument', defaultMic: 'instrument-dyn' },
   { id: 'instrument-clean', name: 'Instrumento limpio (solo protección)', hint: 'Solo un paso alto muy bajo y el limitador: el instrumento tal cual.', source: 'instrument', defaultMic: 'di' }
 ]
@@ -402,6 +409,17 @@ export const MIC_GROUPS: [MicPreset['group'], string][] = [
   ['instrument', 'Micrófonos de instrumento'],
   ['direct', 'Directo (sin micrófono)']
 ]
+
+/** Headings of the use picker; a use goes to the first group whose test matches */
+export const USE_GROUPS: [string, string, (u: UsePreset) => boolean][] = [
+  ['voice', 'Voz', (u) => u.source === 'voice'],
+  ['bass', 'Bajo', (u) => u.id.startsWith('bass')],
+  ['guitar', 'Guitarra', (u) => u.id.startsWith('guitar')],
+  ['drums', 'Batería y percusión', (u) => u.id.startsWith('drum') || u.id === 'percussion'],
+  ['other', 'Otros instrumentos', () => true]
+]
+
+export const useGroupOf = (u: UsePreset): string => USE_GROUPS.find(([, , test]) => test(u))![0]
 
 export const sourceOf = (useId: string): Source => USES.find((u) => u.id === useId)?.source ?? 'voice'
 export const isInstrument = (useId: string): boolean => sourceOf(useId) === 'instrument'
@@ -592,6 +610,8 @@ function buildInstrumentPreset(useId: string, micId: string): ProcessingChain {
   const comp2 = comp2Defaults()
   const limiter = limiterDefaults()
   const bass = useId.startsWith('bass')
+  // Sources whose fundamental sits low: a mic choice must not raise their low cut
+  const deep = bass || ['drum-kick', 'drum-toms', 'drum-kit', 'drum-electronic', 'percussion'].includes(useId)
 
   switch (useId) {
     case 'bass-finger':
@@ -702,6 +722,71 @@ function buildInstrumentPreset(useId: string, micId: string): ProcessingChain {
       gate.on = false
       Object.assign(comp1, { on: true, thresholdDb: -16, ratio: 2, kneeDb: 10, attackMs: 20, releaseMs: 200, makeupDb: 1 })
       break
+    case 'drum-kick':
+      set(0, { freq: 30 })
+      set(1, { gainDb: 3, freq: 60 })
+      set(2, { gainDb: -4, freq: 350, q: 1.4 })
+      set(3, { gainDb: -2, freq: 700, q: 1.2 })
+      set(4, { gainDb: 3, freq: 3500, q: 1.2 })
+      set(6, { gainDb: -2, freq: 8000 })
+      set(7, { on: true, freq: 10000 })
+      // Keyed on the lows so the snare's bleed doesn't open it
+      Object.assign(gate, { mode: 'gate', thresholdDb: -35, hysteresisDb: 6, rangeDb: -40, attackMs: 0.2, holdMs: 40, releaseMs: 100, keyLpfHz: 1000 })
+      Object.assign(comp1, { on: true, thresholdDb: -16, ratio: 4, kneeDb: 4, attackMs: 10, releaseMs: 60, makeupDb: 2 })
+      Object.assign(limiter, { releaseMs: 40 })
+      break
+    case 'drum-snare':
+      set(0, { freq: 80 })
+      set(2, { gainDb: 2, freq: 200, q: 1.4 })
+      set(3, { gainDb: -3, freq: 900, q: 2 })
+      set(4, { gainDb: 2.5, freq: 4000 })
+      set(6, { gainDb: 2, freq: 10000 })
+      // Keyed above the kick so only the snare opens it
+      Object.assign(gate, { mode: 'gate', thresholdDb: -32, hysteresisDb: 6, rangeDb: -25, attackMs: 0.2, holdMs: 60, releaseMs: 150, keyHpfHz: 150 })
+      Object.assign(comp1, { on: true, thresholdDb: -18, ratio: 4, kneeDb: 4, attackMs: 5, releaseMs: 80, makeupDb: 3 })
+      Object.assign(limiter, { releaseMs: 40 })
+      break
+    case 'drum-toms':
+      set(0, { freq: 60 })
+      set(1, { gainDb: 2, freq: 100 })
+      set(2, { gainDb: -4, freq: 400, q: 1.2 })
+      set(4, { gainDb: 2.5, freq: 3500 })
+      set(6, { gainDb: -1, freq: 8000 })
+      // Long hold and release: toms ring, the gate only removes bleed between hits
+      Object.assign(gate, { mode: 'gate', thresholdDb: -35, hysteresisDb: 6, rangeDb: -30, attackMs: 0.2, holdMs: 120, releaseMs: 250, keyHpfHz: 80 })
+      Object.assign(comp1, { on: true, thresholdDb: -18, ratio: 3, kneeDb: 4, attackMs: 10, releaseMs: 120, makeupDb: 2 })
+      break
+    case 'drum-hihat':
+      set(0, { freq: 300, slope: 24 })
+      set(3, { gainDb: -2, freq: 1000 })
+      set(5, { gainDb: -1.5, freq: 5000, q: 2 })
+      set(6, { gainDb: 2, freq: 10000 })
+      gate.on = false
+      break
+    case 'drum-overheads':
+      set(0, { freq: 100 })
+      set(2, { gainDb: -2, freq: 400, q: 1 })
+      set(5, { gainDb: -1.5, freq: 3500, q: 2 })
+      set(6, { gainDb: 2, freq: 12000 })
+      gate.on = false
+      Object.assign(comp1, { on: true, thresholdDb: -20, ratio: 2, kneeDb: 10, attackMs: 20, releaseMs: 150, makeupDb: 1 })
+      break
+    case 'drum-kit':
+      set(0, { freq: 40 })
+      set(1, { gainDb: 2, freq: 80 })
+      set(2, { gainDb: -3, freq: 400 })
+      set(4, { gainDb: 1.5, freq: 3000 })
+      set(6, { gainDb: 1.5, freq: 10000 })
+      gate.on = false
+      Object.assign(comp1, { on: true, thresholdDb: -22, ratio: 4, kneeDb: 4, attackMs: 15, releaseMs: 120, makeupDb: 3 })
+      // Parallel ("New York") compression: crushed copy mixed under the dry kit
+      Object.assign(comp2, { on: true, thresholdDb: -30, ratio: 8, kneeDb: 2, attackMs: 2, releaseMs: 100, makeupDb: 4, mix: 35, detector: 'peak' })
+      break
+    case 'drum-electronic':
+      set(0, { freq: 25, slope: 12 })
+      gate.on = false
+      Object.assign(comp1, { on: true, thresholdDb: -14, ratio: 2, kneeDb: 10, attackMs: 10, releaseMs: 100, makeupDb: 1 })
+      break
     case 'percussion':
       set(0, { freq: 40 })
       set(1, { gainDb: 3, freq: 80 })
@@ -750,7 +835,7 @@ function buildInstrumentPreset(useId: string, micId: string): ProcessingChain {
     case 'condenser':
     case 'sdc':
       // Detailed and picks up the room
-      set(0, { freq: Math.max(bands[0].freq, bass ? 35 : 70) })
+      set(0, { freq: Math.max(bands[0].freq, deep ? 35 : 70) })
       add(5, -1.5)
       gate.thresholdDb += 4
       break

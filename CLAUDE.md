@@ -46,7 +46,8 @@ src/renderer/src/
     players/       players, teams, avatars, age handicap
     settings/      game settings + defaults (appMode, birthdayName)
     processor/     mic processor: model, 8-band parametric EQ (exact Web Audio biquads), presets use × mic
-                   (voice uses and instrument uses: bass, guitar, acoustic, keys, percussion; mics, instrument mics
+                   (voice uses and instrument uses: bass, guitar, acoustic, drums (kick/snare/toms/hi-hat/
+                   overheads/kit/electronic), keys, percussion; USE_GROUPS for the picker; mics, instrument mics
                    and DI/active/piezo pickups, `micsFor`/`selectUse`), auto setup; tuning.ts (instrument tuner:
                    tunings, nearest string, pitch smoother; pitch itself is YIN from studio/pitch.ts);
                    dynamics.ts (gate/expander with key filters, de-esser, compressor with sidechain HPF

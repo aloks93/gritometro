@@ -20,6 +20,8 @@ import {
   selectUse,
   serializePreset,
   STAGES_PER_BAND,
+  USE_GROUPS,
+  useGroupOf,
   USES
 } from './processor'
 
@@ -191,6 +193,24 @@ describe('processor config', () => {
     // Voice-only mics aren't offered for instruments, pickups aren't offered for voice
     expect(micsFor('bass-finger').some((m) => m.id === 'headset')).toBe(false)
     expect(micsFor('speech').some((m) => m.id === 'di')).toBe(false)
+  })
+
+  it('drum presets: gates keyed to their own drum, cymbals cut low, kick keeps its lows on any mic', () => {
+    const drums = USES.filter((u) => useGroupOf(u) === 'drums')
+    expect(drums.map((u) => u.id)).toEqual(expect.arrayContaining(['drum-kick', 'drum-snare', 'drum-toms', 'drum-hihat', 'drum-overheads', 'drum-kit', 'drum-electronic', 'percussion']))
+    const kick = buildPreset('drum-kick', 'kick-dyn')
+    expect(kick.gate).toMatchObject({ on: true, mode: 'gate' })
+    expect(kick.gate.keyLpfHz).toBeGreaterThan(0)
+    expect(buildPreset('drum-snare', 'instrument-dyn').gate.keyHpfHz).toBeGreaterThan(0)
+    expect(eqCurve(buildPreset('drum-hihat', 'sdc').eq, [100], SR)[0]).toBeLessThan(-20)
+    expect(buildPreset('drum-overheads', 'sdc').gate.on).toBe(false)
+    expect(buildPreset('drum-kit', 'condenser').comp2.mix).toBeLessThan(100)
+    // A condenser on the kick or the whole kit must not raise the low cut into the fundamental
+    expect(eqCurve(buildPreset('drum-kick', 'condenser').eq, [50], SR)[0]).toBeGreaterThan(-3)
+    expect(eqCurve(buildPreset('drum-kit', 'condenser').eq, [50], SR)[0]).toBeGreaterThan(-3)
+    // Every use lands in exactly one picker group
+    expect(USES.every((u) => USE_GROUPS.some(([g]) => g === useGroupOf(u)))).toBe(true)
+    expect(USES.filter((u) => useGroupOf(u) === 'other').map((u) => u.id)).toEqual(['keys', 'instrument-clean'])
   })
 
   it('switching use keeps a mic that fits, and crossing voice ↔ instrument picks the usual capture', () => {
