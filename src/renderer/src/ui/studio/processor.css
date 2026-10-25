@@ -1,0 +1,327 @@
+/* Mic processor (studio). Uses the studio tokens from studio.css and the EQ/curve styles from mixer.css. */
+.st-proc {
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+}
+.proc-io {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.8em;
+}
+.proc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 220px;
+  flex: 1 1 220px;
+  max-width: 380px;
+}
+.proc-field > span {
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--st-muted);
+}
+.proc-narrow {
+  min-width: 120px;
+  flex: 0 0 140px;
+}
+.proc-wide {
+  min-width: 300px;
+}
+.proc-check {
+  padding-bottom: 0.45em;
+}
+.proc-presets {
+  padding-top: 0.6em;
+  border-top: 1px solid var(--st-border);
+}
+.proc-vm .st-btn {
+  font-size: 12px;
+  padding: 0.3em 0.6em;
+}
+.st-btn.proc-bypass.active {
+  background: var(--st-warn);
+  border-color: var(--st-warn);
+  color: #111;
+  font-weight: 700;
+}
+.st-btn.st-mixer-on.warn {
+  border-color: var(--st-warn);
+  color: var(--st-warn);
+}
+.st-warnings li.bad {
+  color: var(--st-bad);
+}
+.proc-guide {
+  background: #0f1115;
+  border: 1px solid var(--st-border);
+  border-radius: 4px;
+  padding: 0.6em 1em;
+  font-size: 0.9em;
+  user-select: text;
+}
+.proc-guide ol {
+  margin: 0 0 0.4em;
+  padding-left: 1.3em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+}
+
+/* signal flow */
+.st-panel.proc-flow {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 6px;
+  overflow-x: auto;
+}
+.proc-flow.bypassed .proc-block:not(:first-child):not(:last-child) {
+  opacity: 0.35;
+}
+.proc-block {
+  flex: 1 1 0;
+  min-width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px;
+  background: #0f1115;
+  border: 1px solid var(--st-border);
+  border-radius: 4px;
+  font-size: 12px;
+  position: relative;
+}
+.proc-block.active {
+  border-color: #2f4a5e;
+}
+.proc-block b {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.proc-block small {
+  color: var(--st-muted);
+  font-size: 10px;
+}
+.proc-block .st-mono {
+  font-size: 12px;
+}
+.proc-led {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #3a414d;
+  background: #20252d;
+  cursor: pointer;
+}
+.proc-led.on {
+  background: var(--st-ok);
+  box-shadow: 0 0 6px var(--st-ok);
+}
+.proc-led:disabled {
+  cursor: default;
+}
+.proc-gr {
+  width: 100%;
+  height: 5px;
+  background: #1b1f26;
+  border-radius: 2px;
+  overflow: hidden;
+  display: flex;
+  justify-content: flex-end;
+}
+.proc-gr i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--st-warn);
+  transform-origin: right;
+  transition: transform 60ms linear;
+}
+.proc-arrow {
+  align-self: center;
+  color: var(--st-muted);
+}
+
+/* EQ */
+.proc-eq-wrap {
+  position: relative;
+}
+.proc-eq-canvas {
+  position: absolute;
+  inset: 1px;
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  pointer-events: none;
+}
+.st-eq.proc-eq {
+  position: relative;
+  aspect-ratio: 900 / 260;
+  background: transparent;
+  display: block;
+}
+.proc-eq-wrap {
+  background: #0b0d10;
+  border-radius: 4px;
+}
+.proc-eq .fill {
+  fill: #3fb6ff;
+  opacity: 0.1;
+}
+.proc-eq .curve {
+  stroke: #e6e9ee;
+}
+.proc-sel-curve {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  opacity: 0.8;
+}
+.proc-eq .handle.off circle {
+  opacity: 0.35;
+  stroke-dasharray: 3 2;
+}
+.proc-bands {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+.proc-band {
+  background: #0f1115;
+  border: 1px solid var(--st-border);
+  border-top: 3px solid var(--strip);
+  border-radius: 4px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+.proc-band.sel {
+  border-color: var(--strip);
+  background: #141820;
+}
+.proc-band.off {
+  opacity: 0.5;
+}
+.proc-band .st-row {
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+.proc-band select {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px !important;
+  padding: 2px !important;
+}
+.proc-x {
+  padding: 0 4px !important;
+  font-size: 11px !important;
+  color: var(--st-muted) !important;
+}
+.proc-bnum {
+  display: grid;
+  grid-template-columns: 38px 1fr 22px;
+  align-items: center;
+  gap: 4px;
+  color: var(--st-muted);
+}
+.studio .proc-bnum input[type='number'] {
+  width: 100%;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.proc-bnum select {
+  grid-column: span 2;
+}
+.proc-bnum i {
+  font-style: normal;
+  font-size: 10px;
+}
+
+/* modules */
+.proc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 1em;
+  align-items: start;
+}
+.st-panel.proc-box {
+  gap: 0.5em;
+}
+.proc-box.off .st-num,
+.proc-box.off .st-comp {
+  opacity: 0.5;
+}
+.proc-box .st-curve .curve {
+  stroke: #3fb6ff;
+}
+.proc-thr {
+  stroke: var(--st-warn);
+  stroke-dasharray: 3 3;
+  stroke-width: 1;
+}
+.proc-badge {
+  font-size: 11px;
+  color: var(--st-muted);
+  padding: 1px 6px;
+  border: 1px solid var(--st-border);
+  border-radius: 3px;
+}
+.proc-badge.on {
+  color: var(--st-warn);
+  border-color: var(--st-warn);
+}
+.proc-gate-led {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #20252d;
+  border: 1px solid #3a414d;
+}
+.proc-gate-led.open {
+  background: var(--st-ok);
+  box-shadow: 0 0 6px var(--st-ok);
+}
+.proc-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* assistant */
+.st-panel.proc-assistant {
+  max-width: 560px;
+}
+.proc-assistant ol {
+  margin: 0;
+  padding-left: 1.3em;
+}
+.proc-countdown {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 1.2em 0;
+  font-size: 1.2em;
+}
+.proc-countdown .st-mono {
+  font-size: 2.4em;
+  color: var(--st-accent);
+}
+.proc-notes {
+  margin: 0;
+  padding-left: 1.2em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  user-select: text;
+}

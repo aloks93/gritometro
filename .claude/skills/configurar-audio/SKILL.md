@@ -18,6 +18,13 @@ Código: `core/audio/AudioConfig.ts` (perfiles, `effectiveProfile`), `Microphone
 4. Sin compresor/limitador fuerte en la tira (iguala a todos los niños). Un EQ suave está bien.
 5. El botón "+ VoiceMeeter" en Audio → Avanzado crea un perfil que ya preselecciona el dispositivo virtual.
 
+
+### Procesar el micro antes de VoiceMeeter (modo estudio → Procesador)
+1. Procesador: micrófono = el micro físico; salida = **VoiceMeeter Input** (o AUX/VAIO3 Input en Banana/Potato); 48 kHz.
+2. En VoiceMeeter la tira virtual VAIO (o AUX) recibe la voz procesada: activar B1; **no** enviar la tira del micro físico a B1 (sonaría doble).
+3. Discord/OBS/Zoom usan «VoiceMeeter Output» (B1). Para oírse: escucha del procesador por auriculares o A1 en VoiceMeeter.
+4. Alternativa si el micro ya entra en VoiceMeeter: entrada del procesador = «VoiceMeeter Out B2», salida = «VoiceMeeter AUX Input».
+
 ## Consola / interfaz USB
 - Si expone varios canales por USB: "Un canal específico" → el canal del micro. Si solo da el master estéreo: "Mezcla".
 - Chromium puede reportar solo 2 canales aunque la interfaz tenga más (limitación del driver WDM de Windows). Prueba el panel del fabricante para exponer más entradas, o rutea con VoiceMeeter.

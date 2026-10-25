@@ -3,6 +3,7 @@ import { defaultAudioSettings, type AudioSettings } from '../core/audio/AudioCon
 import type { Player } from '../core/players/players'
 import { defaultGameSettings, type GameSettings } from '../core/settings/settings'
 import { mergeMixer, type MixerConfig } from '../core/mixer/mixer'
+import { mergeProcessor, type ProcessorConfig } from '../core/processor/processor'
 import { mergeStudio, type StudioData } from '../core/studio/studio'
 import type { CustomTheme, Theme } from '../themes/Theme'
 import { DEFAULT_THEME_ID, resolveTheme } from '../themes/registry'
@@ -28,6 +29,7 @@ export interface AppData {
   themeId: string
   studio: StudioData
   mixer: MixerConfig
+  processor: ProcessorConfig
 }
 
 const KEYS: Record<keyof AppData, string> = {
@@ -38,7 +40,8 @@ const KEYS: Record<keyof AppData, string> = {
   customThemes: 'custom-themes',
   themeId: 'theme',
   studio: 'studio',
-  mixer: 'mixer'
+  mixer: 'mixer',
+  processor: 'processor'
 }
 
 type Updater<T> = T | ((prev: T) => T)
@@ -52,7 +55,7 @@ interface Store {
 const StoreContext = createContext<Store | null>(null)
 
 async function loadAll(): Promise<AppData> {
-  const [settings, audio, players, records, customThemes, themeId, studio, mixer] = await Promise.all([
+  const [settings, audio, players, records, customThemes, themeId, studio, mixer, processor] = await Promise.all([
     load<Partial<GameSettings>>(KEYS.settings, {}),
     load<AudioSettings | null>(KEYS.audio, null),
     load<Player[]>(KEYS.players, []),
@@ -60,7 +63,8 @@ async function loadAll(): Promise<AppData> {
     load<CustomTheme[]>(KEYS.customThemes, []),
     load<string>(KEYS.themeId, DEFAULT_THEME_ID),
     load<Partial<StudioData>>(KEYS.studio, {}),
-    load<Partial<MixerConfig> | null>(KEYS.mixer, null)
+    load<Partial<MixerConfig> | null>(KEYS.mixer, null),
+    load<Partial<ProcessorConfig> | null>(KEYS.processor, null)
   ])
   // Merge with defaults so settings added in newer versions get sane values
   const audioSettings = audio && audio.profiles?.length ? { ...defaultAudioSettings(), ...audio } : defaultAudioSettings()
@@ -72,7 +76,8 @@ async function loadAll(): Promise<AppData> {
     customThemes,
     themeId,
     studio: mergeStudio(studio),
-    mixer: mergeMixer(mixer)
+    mixer: mergeMixer(mixer),
+    processor: mergeProcessor(processor)
   }
 }
 

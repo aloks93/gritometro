@@ -43,7 +43,7 @@ import { compressorCurve } from '../../core/studio/dsp'
 import { openTextFile, saveFile, toBase64 } from '../storage'
 import { useStore } from '../store'
 import { useStudioPrefs } from './MonitorView'
-import { fmtTime, Segmented } from './widgets'
+import { fmtTime, Num, Segmented } from './widgets'
 import './mixer.css'
 
 const METER_MIN = -60
@@ -747,27 +747,6 @@ const xOfF = (f: number): number => (Math.log10(f / 20) / 3) * EQ_W
 const fOfX = (x: number): number => 20 * Math.pow(1000, Math.max(0, Math.min(EQ_W, x)) / EQ_W)
 const yOfDb = (db: number): number => EQ_H / 2 - (Math.max(-EQ_RANGE * 1.5, Math.min(EQ_RANGE * 1.5, db)) / EQ_RANGE) * (EQ_H / 2)
 const dbOfY = (y: number): number => ((EQ_H / 2 - y) / (EQ_H / 2)) * EQ_RANGE
-
-function Num({ label, value, min, max, step = 1, unit, onChange }: { label: string; value: number; min: number; max: number; step?: number; unit: string; onChange: (v: number) => void }): JSX.Element {
-  return (
-    <label className="st-num">
-      <span>{label}</span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
-      <input
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => {
-          const v = Number(e.target.value)
-          if (Number.isFinite(v)) onChange(Math.min(max, Math.max(min, v)))
-        }}
-      />
-      <i>{unit}</i>
-    </label>
-  )
-}
 
 function StripEditor({
   s,

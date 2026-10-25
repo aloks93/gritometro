@@ -32,10 +32,13 @@ src/renderer/src/
                    PCM tap via pcmTap.worklet.js, monitoring, output device, scheduled output,
                    setSourceOverride to analyse a mixer bus), MixerEngine (virtual mixer graph,
                    stripGate.worklet.js, busTap.worklet.js),
-                   Calibration (noise floor), ScoreEngine (scream score + SilenceWatcher)
+                   Calibration (noise floor), ScoreEngine (scream score + SilenceWatcher),
+                   ProcessorEngine (mic processor graph, processor.worklet.ts bundled via ?worker&url)
     game/          GameMode contract, registry, modes/*
     players/       players, teams, avatars, age handicap
     settings/      game settings + defaults (appMode, birthdayName)
+    processor/     mic processor: model, 8-band parametric EQ (exact Web Audio biquads), presets use × mic,
+                   auto setup (dynamics.ts: gate/expander, de-esser, compressor, look-ahead limiter, shared with the worklet)
     mixer/         pure mixer model: strips, buses, solo/mute, pan law, fader taper, EQ response,
                    routing warnings, scenes, auto trim (MixerEngine.ts in audio/ builds the graph)
     studio/        pure studio DSP: analysis (third-octave, centroid, SNR, technicalScore, WAV 16/24/float
@@ -60,6 +63,8 @@ src/renderer/src/
                    pre/post-fader meters, CUE/PFL + headphone monitor, gain staging, anti-feedback, MIDI learn,
                    user presets, scenes,
                    stereo bus recording, auto trim; any bus can feed the analyzers),
+                   Procesador (one mic → gate → parametric EQ → de-esser → comp ×2 → limiter → VoiceMeeter Input /
+                   any output, headphone monitor, bypass A/B, presets, auto assistant),
                    Comparador (takes, synced A/B, blind test, difference curves, best mic per use, session/PDF),
                    Laboratorio (THD+N, phase/goniometer + mic alignment, room RT60), Equipos (device inventory,
                    capabilities, profiles per device, engine latency), Generador (signals +

@@ -13,6 +13,9 @@ describe('studio English', () => {
     expect(translateText('Saturó 3 veces en los últimos 3 s (pico 1.1 dBFS).')).toBe('Clipped 3 times in the last 3 s (peak 1.1 dBFS).')
     expect(translateText('Micro 1 suena por A1: usa auriculares o se acoplará con altavoces.')).toBe('Mic 1 plays through A1: use headphones or it will feed back through speakers.')
     expect(translateText('Por uso: Voz hablada → SM58; Canto → U87.')).toBe('By use: Speech → SM58; Singing → U87.')
+    expect(translateText('Pico -20.5 dBFS → ganancia 8.5 dB')).toBe('Peak -20.5 dBFS → gain 8.5 dB')
+    expect(translateText('Preset aplicado: Voz hablada · Micro USB')).toBe('Preset applied: Speech · USB mic')
+    expect(translateText('Barro (300 Hz): -2.5 dB')).toBe('Mud (300 Hz): -2.5 dB')
   })
 
   it('splits " · " composites and translates each part', () => {

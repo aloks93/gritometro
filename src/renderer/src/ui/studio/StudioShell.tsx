@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { audioEngine } from '../../core/audio/AudioEngine'
 import { mixerEngine } from '../../core/audio/MixerEngine'
+import { processorEngine } from '../../core/audio/ProcessorEngine'
 import { AudioScreen } from '../screens/AudioScreen'
 import { api } from '../storage'
 import { useStore } from '../store'
@@ -15,16 +16,18 @@ import { LabView } from './LabView'
 import { MixerView, useMixerState } from './MixerView'
 import { MonitorView, useStudioPrefs } from './MonitorView'
 import { setPlaybackDevice, stopPlayback } from './playback'
+import { ProcessorView, useProcessorState } from './ProcessorView'
 import { RecorderView } from './RecorderView'
 import { SlmView } from './SlmView'
 import type { StudioViewMode } from '../../core/studio/studio'
 import './studio.css'
 
-type Tab = 'monitor' | 'mixer' | 'slm' | 'calib' | 'recorder' | 'compare' | 'lab' | 'generator' | 'input' | 'devices'
+type Tab = 'monitor' | 'mixer' | 'processor' | 'slm' | 'calib' | 'recorder' | 'compare' | 'lab' | 'generator' | 'input' | 'devices'
 
 const TABS: [Tab, string][] = [
   ['monitor', 'Monitor'],
   ['mixer', 'Mezclador'],
+  ['processor', 'Procesador'],
   ['slm', 'Sonómetro'],
   ['calib', 'Calibración'],
   ['recorder', 'Grabadora'],
@@ -54,6 +57,7 @@ const SHORTCUTS: [string, string][] = [
   ['F · P', 'Monitor: fijar referencia · congelar analizador'],
   ['R · M', 'Grabadora: grabar/detener · marcador'],
   ['1 … 9 · Espacio', 'Comparador: escuchar toma (o cambiar en A/B) · detener'],
+  ['B', 'Procesador: bypass (A/B)'],
   ['?', 'Mostrar esta ayuda']
 ]
 
@@ -68,6 +72,7 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
 function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLang }): JSX.Element {
   const { data, update } = useStore()
   const mixer = useMixerState()
+  const proc = useProcessorState()
   const [prefs, setPrefs] = useStudioPrefs()
   const [tab, setTabState] = useState<Tab>(lastTab)
   const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([])
@@ -102,6 +107,7 @@ function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLan
       audioEngine.setMonitor(null)
       audioEngine.setSourceOverride(null)
       mixerEngine.stop()
+      processorEngine.stop()
       generator.stop()
       stopPlayback()
     }
@@ -112,13 +118,20 @@ function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLan
 
   // Every mixer edit goes live (parameters instantly, structure by rebuilding)
   useEffect(() => mixerEngine.apply(data.mixer), [data.mixer])
+  useEffect(() => processorEngine.apply(data.processor), [data.processor])
 
   // Analyzers follow the chosen source; a mixer rebuild hands out a new bus stream
   const sourceBus = prefs.analysisSource !== 'input' && mixer.status === 'on' ? data.mixer.buses.find((b) => b.id === prefs.analysisSource) : undefined
+  const sourceProc = prefs.analysisSource === 'processor' && proc.status === 'on'
   useEffect(() => {
+    if (sourceProc) {
+      const stream = processorEngine.outputStream()
+      audioEngine.setSourceOverride(stream ? { stream, label: 'Procesador (salida)' } : null)
+      return
+    }
     const stream = sourceBus ? mixerEngine.busStream(sourceBus.id) : null
     audioEngine.setSourceOverride(stream && sourceBus ? { stream, label: `Bus ${sourceBus.label} · ${sourceBus.name}` } : null)
-  }, [sourceBus?.id, sourceBus?.label, sourceBus?.name, mixer.generation, mixer.status])
+  }, [sourceBus?.id, sourceBus?.label, sourceBus?.name, mixer.generation, mixer.status, sourceProc, proc.generation])
 
   // One output choice for monitoring, take playback and the generator
   useEffect(() => {
@@ -215,15 +228,16 @@ function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLan
               </option>
             ))}
           </select>
-          {mixer.status === 'on' && (
+          {(mixer.status === 'on' || proc.status === 'on') && (
             <select
               className="st-output"
-              value={sourceBus ? sourceBus.id : 'input'}
+              value={sourceProc ? 'processor' : sourceBus ? sourceBus.id : 'input'}
               onChange={(e) => setPrefs({ analysisSource: e.target.value })}
               title="Qué analizan el Monitor, el Sonómetro, la Grabadora y el Comparador"
             >
               <option value="input">🔍 Entrada del perfil</option>
-              {data.mixer.buses.map((b) => (
+              {proc.status === 'on' && <option value="processor">🔍 Procesador (salida)</option>}
+              {mixer.status === 'on' && data.mixer.buses.map((b) => (
                 <option key={b.id} value={b.id}>
                   🔍 Bus {b.label} · {b.name}
                 </option>
@@ -233,6 +247,11 @@ function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLan
           {mixer.status === 'on' && (
             <button className="st-btn on st-mixer-on" onClick={() => setTab('mixer')} title="El mezclador está encendido">
               MIX
+            </button>
+          )}
+          {proc.status === 'on' && (
+            <button className={`st-btn on st-mixer-on ${data.processor.bypass ? 'warn' : ''}`} onClick={() => setTab('processor')} title="El procesador de micrófono está encendido">
+              PROC
             </button>
           )}
           {prefs.monitorDb !== null && (
@@ -262,6 +281,7 @@ function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLan
           <>
             {shown === 'monitor' && <MonitorView />}
             {shown === 'mixer' && <MixerView />}
+            {shown === 'processor' && <ProcessorView />}
             {shown === 'slm' && <SlmView />}
             {shown === 'calib' && <CalibrationView />}
             {shown === 'recorder' && <RecorderView />}

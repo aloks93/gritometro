@@ -139,3 +139,25 @@ export function Segmented<T extends string | number>({
     </div>
   )
 }
+
+/** Slider + number box for one parameter */
+export function Num({ label, value, min, max, step = 1, unit, onChange }: { label: string; value: number; min: number; max: number; step?: number; unit: string; onChange: (v: number) => void }): JSX.Element {
+  return (
+    <label className="st-num">
+      <span>{label}</span>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => {
+          const v = Number(e.target.value)
+          if (Number.isFinite(v)) onChange(Math.min(max, Math.max(min, v)))
+        }}
+      />
+      <i>{unit}</i>
+    </label>
+  )
+}

@@ -1,6 +1,6 @@
 {
   "name": "gritometro",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Gritómetro: mide quién grita más fuerte. Temas personalizables y modos de reto.",
   "main": "./out/main/index.js",
   "author": "Gritómetro",
