@@ -16,13 +16,18 @@ description: Modo Estudio oculto del Gritómetro - interfaz profesional para pro
 - UI: `src/renderer/src/ui/studio/` → `StudioShell.tsx` (pestañas), `MonitorView.tsx`, `CompareView.tsx`, `playback.ts`, `studio.css` (estilos propios con prefijo `st-`; redefine las variables `--c-*` para que la pantalla de Audio embebida combine).
 - Motor: `audioEngine.spectrumDb()` (FFT 8192), `audioEngine.waveform()`, `audioEngine.captureTake(ms, voicedAboveDb)` (lecturas + espectro de potencia promediado + PCM post-ganancia).
 
+## Monitor
+- Medidores RMS/pico, lecturas (cresta, SNR en vivo, SPL aprox., clips), espectro FFT 8192 y osciloscopio.
+- **Frecuencia dominante** (Hz + nota musical): para localizar un acople y recortarlo en el EQ.
+- **Fijar referencia**: congela el espectro actual (línea morada discontinua) para comparar posiciones o micros en vivo.
+
 ## Flujo de comparación (para explicarlo al usuario)
 1. Comparador → añadir cada micro (dispositivo, canal, trim, nombre).
-2. "Grabar" en cada uno: mide ruido en silencio (mediana), cuenta 3-2-1 y graba la toma.
-3. Tabla: ruido, nivel, pico, SNR, factor de cresta, brillo (centroide), graves/medios/agudos, clips, puntuación técnica (0–100) con la nota principal.
+2. "Grabar" en cada uno (o **"Grabar todos en orden"**): mide ruido en silencio (mediana + espectro del silencio), cuenta 3-2-1 y graba la toma.
+3. Tabla: ruido (y **ruido ponderado A**, **zumbido 50/60 Hz**), nivel, pico (exacto por muestra), SNR, factor de cresta, brillo (centroide), graves/medios/agudos, clips (+ muestras a 0 dBFS), puntuación técnica (0–100) con la nota principal (incluye avisos de zumbido y DC offset), miniatura de forma de onda.
 4. Gráfico de respuesta en tercios de octava normalizado (compara la forma, no el volumen).
 5. "Prueba a ciegas (A/B)": orden aleatorio, volumen igualado (`matchLoudness`), calificar con estrellas, revelar.
-6. Exportar CSV y WAV por toma. El audio de las tomas vive solo en memoria; las métricas sí se guardan.
+6. Exportar CSV (con `;` y coma decimal para Excel en español) y WAV por toma. El audio de las tomas vive solo en memoria; las métricas sí se guardan.
 
 Consejos para una comparación justa: misma frase, misma distancia y posición, misma ganancia de preamp cuando sea posible; el procesamiento de Windows siempre desactivado (la toma lo fuerza).
 

@@ -12,6 +12,7 @@
   --st-ok: #4ade80;
   --st-warn: #ff8a3d;
   --st-bad: #ff4d5e;
+  --st-ref: #b48cff;
   --st-mono: 'Cascadia Mono', Consolas, 'Courier New', monospace;
 
   --c-bg: #0d0f12;
@@ -412,6 +413,22 @@
 .st-bands .low { background: #b48cff; }
 .st-bands .mid { background: #3fb6ff; }
 .st-bands .high { background: #ffd84d; }
+.st-table .st-small.bad { color: var(--st-bad); }
+.st-wave {
+  display: block;
+  width: 210px;
+  height: 22px;
+  margin-top: 4px;
+  background: #0f1115;
+  border-radius: 2px;
+}
+.st-readout-inline {
+  font-family: var(--st-mono);
+  color: var(--st-muted);
+}
+.st-readout-inline b {
+  color: var(--st-accent);
+}
 .st-score {
   color: var(--st-accent);
   font-size: 1.2em;

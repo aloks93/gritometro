@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type { LevelReading } from '../audio/LevelAnalyzer'
 import {
+  aWeightingDb,
+  aWeightingOffset,
   BAND_CENTERS,
   bandCurve,
   bandShares,
+  detectHum,
+  dominantFrequency,
   encodeWav,
+  envelope,
   matchGain,
+  noteName,
   pcmRms,
+  pcmStats,
   spectralCentroid,
   summarizeTake,
   technicalScore
@@ -91,5 +98,76 @@ describe('playback + export helpers', () => {
     expect(v.getUint32(40, true)).toBe(8)
     expect(v.getInt16(46, true)).toBe(0x7fff)
     expect(v.getInt16(48, true)).toBe(-0x8000)
+  })
+})
+
+describe('noise analysis', () => {
+  it('A-weighting matches the standard curve', () => {
+    expect(aWeightingDb(1000)).toBeCloseTo(0, 0)
+    expect(aWeightingDb(100)).toBeCloseTo(-19.1, 0)
+    expect(aWeightingDb(10000)).toBeCloseTo(-2.5, 0)
+  })
+
+  it('low rumble is discounted by A-weighting, mid noise is not', () => {
+    expect(aWeightingOffset(spectrum({ from: 20, to: 120, gain: 1e6 }), SR, FFT)).toBeLessThan(-15)
+    expect(Math.abs(aWeightingOffset(spectrum({ from: 900, to: 1200, gain: 1e6 }), SR, FFT))).toBeLessThan(2)
+  })
+
+  it('finds 50 Hz mains hum and ignores flat noise', () => {
+    const p = spectrum()
+    for (const f of [50, 100, 150, 200]) p[Math.round((f * FFT) / SR)] = 1e-3
+    expect(detectHum(p, SR, FFT)?.hz).toBe(50)
+    expect(detectHum(spectrum(), SR, FFT)).toBeNull()
+  })
+
+  it('tells 60 Hz hum apart from 50 Hz', () => {
+    const p = spectrum()
+    for (const f of [60, 120, 180]) p[Math.round((f * FFT) / SR)] = 1e-3
+    expect(detectHum(p, SR, FFT)?.hz).toBe(60)
+  })
+
+  it('summarizeTake adds noise, DC and envelope details when given the data', () => {
+    const pcm = new Float32Array(4800).fill(0.05)
+    pcm[100] = 1
+    const m = summarizeTake({ frames: frames(Array(100).fill(-20)), noiseFloorDb: -70, power: spectrum(), sampleRate: SR, fftSize: FFT, noisePower: spectrum(), pcm })
+    expect(m.noiseADb).toBeDefined()
+    expect(m.hum).toBeNull()
+    expect(m.dcOffset).toBeCloseTo(0.05, 2)
+    expect(m.clippedSamples).toBe(1)
+    expect(m.envelope).toHaveLength(160)
+    expect(technicalScore(m).notes.some((n) => n.includes('DC'))).toBe(true)
+  })
+})
+
+describe('live helpers', () => {
+  it('finds the dominant frequency between bins', () => {
+    const db = new Float32Array(BINS).fill(-100)
+    const bin = 1000 / (SR / FFT) // 170.67
+    db[170] = -20
+    db[171] = -18
+    db[172] = -30
+    const d = dominantFrequency(db, SR, FFT)!
+    expect(Math.abs(d.hz - 1000)).toBeLessThan(6)
+    expect(bin).toBeGreaterThan(170)
+    expect(dominantFrequency(new Float32Array(BINS).fill(-120), SR, FFT)).toBeNull()
+  })
+
+  it('names notes', () => {
+    expect(noteName(440)).toBe('A4')
+    expect(noteName(261.6)).toBe('C4')
+  })
+})
+
+describe('pcm helpers', () => {
+  it('pcmStats measures DC, clipping and sample peak', () => {
+    const s = pcmStats(new Float32Array([0.5, -0.5, 1, -1]))
+    expect(s.dcOffset).toBe(0)
+    expect(s.clippedSamples).toBe(2)
+    expect(s.peakDb).toBe(0)
+  })
+
+  it('envelope keeps the peak of each slice', () => {
+    const e = envelope(new Float32Array([0.1, -0.9, 0.2, 0.3]), 2)
+    expect(e).toEqual([0.9, 0.3])
   })
 })
