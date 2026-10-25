@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { audioEngine } from '../../core/audio/AudioEngine'
 import { mixerEngine } from '../../core/audio/MixerEngine'
 import { processorEngine } from '../../core/audio/ProcessorEngine'
+import { multiProcessor } from '../../core/audio/MultiProcessor'
+import { mainConfig } from '../../core/processor/channels'
 import { AudioScreen } from '../screens/AudioScreen'
 import { api } from '../storage'
 import { useStore } from '../store'
@@ -110,6 +112,7 @@ function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLan
       audioEngine.setSourceOverride(null)
       mixerEngine.stop()
       processorEngine.stop()
+      multiProcessor.stopAll()
       generator.stop()
       stopPlayback()
     }
@@ -120,7 +123,10 @@ function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLan
 
   // Every mixer edit goes live (parameters instantly, structure by rebuilding)
   useEffect(() => mixerEngine.apply(data.mixer), [data.mixer])
-  useEffect(() => processorEngine.apply(data.processor), [data.processor])
+  useEffect(() => {
+    processorEngine.apply(mainConfig(data.processor))
+    multiProcessor.apply(data.processor)
+  }, [data.processor])
 
   // Analyzers follow the chosen source; a mixer rebuild hands out a new bus stream
   const sourceBus = prefs.analysisSource !== 'input' && mixer.status === 'on' ? data.mixer.buses.find((b) => b.id === prefs.analysisSource) : undefined
@@ -284,7 +290,7 @@ function StudioBody({ standalone, lang }: { standalone: boolean; lang: StudioLan
             {shown === 'monitor' && <MonitorView />}
             {shown === 'mixer' && <MixerView />}
             {shown === 'interfaces' && <InterfacesView onOpenProcessor={() => setTab('processor')} />}
-            {shown === 'processor' && <ProcessorView />}
+            {shown === 'processor' && <ProcessorView onOpenChannels={() => setTab('interfaces')} />}
             {shown === 'slm' && <SlmView />}
             {shown === 'calib' && <CalibrationView />}
             {shown === 'recorder' && <RecorderView />}

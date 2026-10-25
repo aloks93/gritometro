@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { inputScanner, type ScanDevice, type ScanState } from '../../core/audio/InputScanner'
-import { processorEngine } from '../../core/audio/ProcessorEngine'
+import { multiProcessor } from '../../core/audio/MultiProcessor'
+import { processorEngine, type ProcessorLevels, type ProcessorStatus } from '../../core/audio/ProcessorEngine'
 import { gainAdvice } from '../../core/mixer/mixer'
 import {
   ActivityTracker,
@@ -9,6 +10,9 @@ import {
   channelView,
   copyChannel,
   forgetChannel,
+  liveChannels,
+  loadedOutput,
+  mainConfig,
   parseChannelKey,
   resetChannel,
   setChannelInfo,
@@ -18,14 +22,15 @@ import {
 } from '../../core/processor/channels'
 import { GAIN_MAX, GAIN_MIN, type ProcessorConfig } from '../../core/processor/processor'
 import { useStore } from '../store'
-import { Icon, Knob, useFrame } from './controls'
+import { Icon, Knob, Switch, useFrame } from './controls'
 import { useProcessorState } from './ProcessorView'
 import './processor.css'
 import './interfaces.css'
 
 // Every connected input at once, channel by channel. Clicking a channel loads it in the
 // processor: the channel you were editing is stored as it was, the new one comes back with
-// its own settings. One channel is worked on at a time; the others keep theirs.
+// its own settings. One channel is worked on at a time; the others keep theirs, and the ones
+// marked "en paralelo" keep being processed meanwhile, each to its own output.
 
 function useScan(): ScanState {
   const [s, set] = useState(inputScanner.state)
@@ -42,6 +47,27 @@ function useScan(): ScanState {
 
 type SetFn = (fn: (c: ProcessorConfig) => ProcessorConfig) => void
 
+function useOutputs(): MediaDeviceInfo[] {
+  const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([])
+  useEffect(() => {
+    const load = (): void => {
+      navigator.mediaDevices
+        ?.enumerateDevices()
+        .then((d) => setOutputs(d.filter((x) => x.kind === 'audiooutput' && x.deviceId !== 'communications' && x.deviceId !== 'default')))
+        .catch(() => setOutputs([]))
+    }
+    load()
+    navigator.mediaDevices?.addEventListener('devicechange', load)
+    return () => navigator.mediaDevices?.removeEventListener('devicechange', load)
+  }, [])
+  return outputs
+}
+
+function outputName(outputs: MediaDeviceInfo[], id: string | null): string {
+  if (!id) return 'Predeterminada del sistema'
+  return outputs.find((o) => o.deviceId === id)?.label || 'Salida no conectada'
+}
+
 const STATUS_TEXT: Record<ScanDevice['status'], string> = {
   ok: 'Conectada',
   busy: 'Ocupada por otro programa',
@@ -56,6 +82,7 @@ export function InterfacesView({ onOpenProcessor }: { onOpenProcessor: () => voi
   const set: SetFn = (fn) => update('processor', fn)
   const scan = useScan()
   const proc = useProcessorState()
+  const outputs = useOutputs()
   const loadedKey = channelKey(cfg.input)
 
   const load = (input: ChannelInput): void => set((c) => switchChannel(c, input))
@@ -84,6 +111,10 @@ export function InterfacesView({ onOpenProcessor }: { onOpenProcessor: () => voi
             <small>Ajustados</small>
             <b>{Object.keys(cfg.channels).length}</b>
           </span>
+          <span title="Canales que se procesan a la vez (el del procesador y los marcados en paralelo)">
+            <small>En paralelo</small>
+            <b>{liveChannels(cfg).length + 1}</b>
+          </span>
         </div>
         <button className="vp-btn" onClick={() => void inputScanner.start()} title="Volver a buscar interfaces">
           <Icon name="reset" size={15} />
@@ -100,13 +131,14 @@ export function InterfacesView({ onOpenProcessor }: { onOpenProcessor: () => voi
 
       <div className="vp-if-layout">
         <div className="vp-if-devices">
+          <ParallelRack cfg={cfg} set={set} scan={scan} outputs={outputs} running={proc.status === 'on'} onOpenProcessor={onOpenProcessor} />
           {!scan.running && scan.devices.length === 0 && <section className="vp-panel vp-if-empty">Buscando interfaces…</section>}
           {scan.running && scan.devices.length === 0 && <section className="vp-panel vp-if-empty">No hay entradas de audio conectadas.</section>}
           {scan.devices.map((d) => (
             <DeviceCard key={d.deviceId} device={d} cfg={cfg} loadedKey={loadedKey} onLoad={load} />
           ))}
         </div>
-        <ChannelDetail cfg={cfg} set={set} scan={scan} running={proc.status === 'on'} onOpenProcessor={onOpenProcessor} />
+        <ChannelDetail cfg={cfg} set={set} scan={scan} outputs={outputs} running={proc.status === 'on'} onOpenProcessor={onOpenProcessor} />
       </div>
     </div>
   )
@@ -168,7 +200,7 @@ function ChannelTile({ index, cfg, chKey, loaded, peak, rms, act, onClick }: { i
   const pct = (db: number): number => Math.max(0, Math.min(100, ((db + 60) / 60) * 100))
   const summary = setup ? chainSummary(setup).join(' · ') : ''
   return (
-    <button className={`vp-if-tile ${loaded ? 'loaded' : ''} ${act.signal ? 'signal' : ''}`} onClick={onClick} title={summary || 'Sin ajustes guardados'}>
+    <button className={`vp-if-tile ${loaded ? 'loaded' : ''} ${act.signal ? 'signal' : ''} ${setup?.live ? 'live' : ''}`} onClick={onClick} title={summary || 'Sin ajustes guardados'}>
       <span className="vp-if-num">{index + 1}</span>
       <span className={`vp-if-led ${act.clip ? 'clip' : act.signal ? 'on' : ''}`} />
       <b>{name || `Canal ${index + 1}`}</b>
@@ -178,12 +210,12 @@ function ChannelTile({ index, cfg, chKey, loaded, peak, rms, act, onClick }: { i
         <s style={{ left: `${pct(act.holdDb)}%` }} />
       </div>
       <small className="vp-mono">{act.holdDb <= -99 ? '—' : `${act.holdDb.toFixed(1)} dBFS`}</small>
-      <small className="vp-if-badge">{loaded ? 'En el procesador' : setup ? 'Ajustado' : ''}</small>
+      <small className="vp-if-badge">{loaded ? 'En el procesador' : setup?.live ? 'En paralelo' : setup ? 'Ajustado' : ''}</small>
     </button>
   )
 }
 
-function ChannelDetail({ cfg, set, scan, running, onOpenProcessor }: { cfg: ProcessorConfig; set: SetFn; scan: ScanState; running: boolean; onOpenProcessor: () => void }): JSX.Element {
+function ChannelDetail({ cfg, set, scan, outputs, running, onOpenProcessor }: { cfg: ProcessorConfig; set: SetFn; scan: ScanState; outputs: MediaDeviceInfo[]; running: boolean; onOpenProcessor: () => void }): JSX.Element {
   useFrame(10)
   const key = channelKey(cfg.input)
   const view = channelView(cfg, key)
@@ -224,6 +256,33 @@ function ChannelDetail({ cfg, set, scan, running, onOpenProcessor }: { cfg: Proc
         </button>
       </div>
       {advice && <p className={`vp-if-advice ${advice.status}`}>{advice.message}</p>}
+      <div className="vp-if-route">
+        <div className="vp-row">
+          <Switch
+            on={cfg.channels[key]?.live ?? false}
+            onChange={(live) => set((c) => setChannelInfo(c, key, { live }))}
+            labels={['EN PARALELO', 'SOLO AL EDITAR']}
+            title="Seguir procesando este canal mientras editas otro"
+          />
+          <small className="vp-dim">{cfg.channels[key]?.live ? 'Se sigue procesando aunque cargues otro canal.' : 'Solo suena mientras está cargado en el procesador.'}</small>
+        </div>
+        <label className="vp-field">
+          <span>Salida del canal</span>
+          <select
+            value={cfg.channels[key]?.outputId ?? '__main'}
+            onChange={(e) => set((c) => setChannelInfo(c, key, { outputId: e.target.value === '__main' ? null : e.target.value }))}
+            title="Cada canal puede ir a su propia salida (p. ej. VoiceMeeter Input y VoiceMeeter AUX Input)"
+          >
+            <option value="__main">{`La del procesador · ${outputName(outputs, cfg.output.deviceId)}`}</option>
+            <option value="">Predeterminada del sistema</option>
+            {outputs.map((o, i) => (
+              <option key={o.deviceId} value={o.deviceId}>
+                {o.label || `Salida ${i + 1}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <div>
         <small className="vp-dim">Procesamiento de este canal</small>
         <div className="vp-if-chips">
@@ -243,7 +302,7 @@ function ChannelDetail({ cfg, set, scan, running, onOpenProcessor }: { cfg: Proc
           Editar en el procesador
         </button>
         {!running && (
-          <button className="vp-btn" onClick={() => void processorEngine.start(cfg)}>
+          <button className="vp-btn" onClick={() => void processorEngine.start(mainConfig(cfg))}>
             <Icon name="power" size={15} />
             Encender procesador
           </button>
@@ -284,5 +343,119 @@ function ChannelDetail({ cfg, set, scan, running, onOpenProcessor }: { cfg: Proc
         </small>
       )}
     </aside>
+  )
+}
+
+// ---- Parallel processing: the loaded channel plus every channel marked live
+
+const STATE_TEXT: Record<ProcessorStatus, string> = { off: 'Apagado', starting: 'Arrancando', on: 'Procesando', error: 'Error' }
+
+interface RackRow {
+  key: string
+  status: ProcessorStatus
+  error?: string
+  levels: ProcessorLevels | null
+  output: string | null
+  loaded: boolean
+}
+
+function ParallelRack({ cfg, set, scan, outputs, running, onOpenProcessor }: { cfg: ProcessorConfig; set: SetFn; scan: ScanState; outputs: MediaDeviceInfo[]; running: boolean; onOpenProcessor: () => void }): JSX.Element | null {
+  useFrame(20)
+  const [, bump] = useState(0)
+  useEffect(() => multiProcessor.onChange(() => bump((n) => n + 1)), [])
+  const live = liveChannels(cfg)
+  if (!live.length) return null
+  const loadedKey = channelKey(cfg.input)
+  const label = (key: string): [string, string] => {
+    const i = parseChannelKey(key)
+    const d = scan.devices.find((x) => x.deviceId === i.deviceId)
+    const ch = i.channel < 0 ? 'Mezcla' : `Canal ${i.channel + 1}`
+    const where = d?.label ?? (i.deviceId ? 'Interfaz no conectada' : 'Entrada predeterminada')
+    const name = cfg.channels[key]?.name
+    return name ? [name, `${ch} · ${where}`] : [ch, where]
+  }
+  const rows: RackRow[] = [
+    { key: loadedKey, status: processorEngine.state.status, error: processorEngine.state.error, levels: processorEngine.levels(), output: loadedOutput(cfg), loaded: true },
+    ...live.map((key) => {
+      const p = multiProcessor.channel(key)
+      return { key, status: p?.state.status ?? 'off', error: p?.state.error, levels: p?.levels ?? null, output: cfg.channels[key].outputId ?? cfg.output.deviceId, loaded: false }
+    })
+  ]
+  const pct = (db: number): number => Math.max(0, Math.min(100, ((db + 60) / 60) * 100))
+  const meter = (peak: number, rms: number): JSX.Element => (
+    <div className="vp-if-meter">
+      <i style={{ clipPath: `inset(0 ${100 - pct(peak)}% 0 0)` }} />
+      <em style={{ width: `${pct(rms)}%` }} />
+    </div>
+  )
+  return (
+    <section className="vp-panel vp-if-rack">
+      <header className="vp-module-head">
+        <b>Procesamiento en paralelo</b>
+        <span className="vp-dim">Cada canal con sus ajustes y su salida · se encienden y apagan con el procesador</span>
+        <span className="vp-grow" />
+        {!running && (
+          <button className="vp-btn vp-small" onClick={() => void processorEngine.start(mainConfig(cfg))}>
+            <Icon name="power" size={14} />
+            Encender todos
+          </button>
+        )}
+      </header>
+      <table className="vp-if-rack-table">
+        <thead>
+          <tr>
+            <th>Canal</th>
+            <th>Salida</th>
+            <th>Entrada</th>
+            <th>Procesado</th>
+            <th title="Reducción de ganancia de compresores y limitador">Reducción</th>
+            <th>Estado</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const [name, sub] = label(r.key)
+            const l = r.levels
+            const gr = l ? Math.min(0, l.comp1Gr + l.comp2Gr + l.limGr) : 0
+            return (
+              <tr key={r.key} className={r.loaded ? 'loaded' : ''}>
+                <td>
+                  <b>{name}</b>
+                  <small className="vp-dim">{sub}</small>
+                </td>
+                <td className="vp-if-rack-out" title={outputName(outputs, r.output)}>
+                  {outputName(outputs, r.output)}
+                </td>
+                <td>{meter(l?.inPeak ?? -100, l?.inRms ?? -100)}</td>
+                <td>{meter(l?.outPeak ?? -100, l?.outRms ?? -100)}</td>
+                <td className="vp-mono">{l ? `${gr.toFixed(1)} dB` : '—'}</td>
+                <td>
+                  <span className={`vp-if-status ${r.status === 'on' ? 'ok' : r.status === 'error' ? 'error' : 'missing'}`} title={r.error}>
+                    {STATE_TEXT[r.status]}
+                  </span>
+                </td>
+                <td className="vp-if-rack-actions">
+                  {r.loaded ? (
+                    <button className="vp-btn vp-small" onClick={onOpenProcessor} title="Este es el canal cargado en el procesador">
+                      Editar
+                    </button>
+                  ) : (
+                    <>
+                      <button className="vp-btn vp-small" onClick={() => set((c) => switchChannel(c, parseChannelKey(r.key)))} title="Cargarlo en el procesador para editarlo (sigue sonando)">
+                        Cargar
+                      </button>
+                      <button className="vp-btn vp-small ghost" onClick={() => set((c) => setChannelInfo(c, r.key, { live: false }))} title="Dejar de procesarlo en paralelo">
+                        <Icon name="close" size={12} />
+                      </button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </section>
   )
 }

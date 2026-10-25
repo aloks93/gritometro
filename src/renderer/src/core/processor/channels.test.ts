@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ActivityTracker, chainSummary, channelKey, channelView, copyChannel, forgetChannel, parseChannelKey, resetChannel, setChannelInfo, storeCurrent, switchChannel } from './channels'
+import { ActivityTracker, chainSummary, channelConfig, channelKey, channelView, copyChannel, forgetChannel, liveChannels, loadedOutput, mainConfig, parseChannelKey, resetChannel, setChannelInfo, setLoadedOutput, storeCurrent, switchChannel } from './channels'
 import { buildPreset, applyChain, defaultProcessor, mergeProcessor, type ProcessorConfig } from './processor'
 
 const A = { deviceId: 'dev-a', channel: 0 }
@@ -82,6 +82,62 @@ describe('per-channel setups', () => {
     expect(m.channels['dev#0'].inputGainDb).toBe(36)
     expect(m.channels['dev#0'].chain.limiter.on).toBe(true)
     expect(mergeProcessor({}).channels).toEqual({})
+  })
+})
+
+describe('parallel channels and routing', () => {
+  it('live channels run with their own setup and output while another one is edited', () => {
+    let cfg: ProcessorConfig = { ...applyChain({ ...defaultProcessor(), input: A }, buildPreset('podcast', 'dynamic')), inputGainDb: 6, output: { deviceId: 'vm-in', mute: false } }
+    cfg = setChannelInfo(cfg, 'dev-a#0', { live: true, outputId: 'vm-aux' })
+    // Loaded channels are run by the main engine, never in parallel
+    expect(liveChannels(cfg)).toEqual([])
+    cfg = switchChannel(cfg, B, 1)
+    expect(liveChannels(cfg)).toEqual(['dev-a#0'])
+    const a = channelConfig({ ...cfg, bypass: true, monitor: { ...cfg.monitor, on: true } }, 'dev-a#0')
+    expect(a.input).toEqual(A)
+    expect(a.inputGainDb).toBe(6)
+    expect(a.comp1.on).toBe(true)
+    expect(a.output).toEqual({ deviceId: 'vm-aux', mute: false })
+    expect(a.bypass).toBe(false)
+    expect(a.monitor.on).toBe(false)
+    // B (loaded, clean) goes to the processor output
+    expect(mainConfig(cfg).output.deviceId).toBe('vm-in')
+    // Going back to A: its own output follows it into the main engine
+    cfg = switchChannel(cfg, A, 2)
+    expect(cfg.channels['dev-a#0'].live).toBe(true)
+    expect(loadedOutput(cfg)).toBe('vm-aux')
+    expect(mainConfig(cfg).output.deviceId).toBe('vm-aux')
+    expect(cfg.output.deviceId).toBe('vm-in')
+  })
+
+  it('without an own output a parallel channel follows the processor output and mute', () => {
+    let cfg = setChannelInfo({ ...defaultProcessor(), input: A, output: { deviceId: 'vm-in', mute: true } }, 'dev-a#1', { live: true })
+    expect(channelConfig(cfg, 'dev-a#1').output).toEqual({ deviceId: 'vm-in', mute: true })
+    // Picking the output edits the processor's, unless the loaded channel has its own
+    cfg = setLoadedOutput(cfg, 'speakers')
+    expect(cfg.output.deviceId).toBe('speakers')
+    cfg = setChannelInfo(cfg, 'dev-a#0', { outputId: 'vm-aux' })
+    cfg = setLoadedOutput(cfg, 'vm-vaio3')
+    expect(cfg.output.deviceId).toBe('speakers')
+    expect(cfg.channels['dev-a#0'].outputId).toBe('vm-vaio3')
+  })
+
+  it('routing survives reset, copy and saving', () => {
+    let cfg = applyChain({ ...defaultProcessor(), input: A }, buildPreset('podcast', 'dynamic'))
+    cfg = setChannelInfo(cfg, 'dev-a#1', { live: true, outputId: '' })
+    cfg = copyChannel(cfg, 'dev-a#0', 'dev-a#1')
+    expect(cfg.channels['dev-a#1']).toMatchObject({ live: true, outputId: '' })
+    cfg = resetChannel(cfg, 'dev-a#1')
+    expect(cfg.channels['dev-a#1']).toMatchObject({ live: true, outputId: '' })
+    const m = mergeProcessor(JSON.parse(JSON.stringify(cfg)))
+    expect(m.channels['dev-a#1']).toMatchObject({ live: true, outputId: '' })
+    // Saves from 2.3/2.4 have neither field
+    expect(mergeProcessor({ channels: { 'dev#0': { name: 'X' } as never } }).channels['dev#0']).toMatchObject({ live: false, outputId: null })
+  })
+
+  it('a channel marked live is worth storing even if untouched', () => {
+    const cfg = switchChannel(setChannelInfo({ ...defaultProcessor(), input: A }, 'dev-a#0', { live: true }), B)
+    expect(cfg.channels['dev-a#0'].live).toBe(true)
   })
 })
 

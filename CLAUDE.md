@@ -18,7 +18,8 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
 ## Editions
 - **Party** (default): the birthday app, with the hidden studio inside. Released as `vX.Y.Z` (marked Latest).
 - **Studio**: `__EDITION__ === 'studio'` (define injected by `electron.vite.config.ts`). Opens straight into `StudioShell standalone` (no exit to party, no Ctrl+Shift+S), behind an access code (`core/studio/unlock.ts`, only the SHA-256 is stored; remembered via `settings.studioUnlocked`). Own appId/productName (`electron-builder.studio.yml`) and own data folder `%APPDATA%/Gritometro Studio`. Released separately as `studio-vX.Y.Z` with `--latest=false`.
-- **Procesador**: `__EDITION__ === 'processor'`. Only the mic processor (`ProcessorShell` → `ProcessorView`), no access code,
+- **Procesador**: `__EDITION__ === 'processor'`. Only the mic processor (`ProcessorShell`: tabs Procesador → `ProcessorView` and
+  Canales → `InterfacesView`, Alt+1/2), no access code,
   no party mic (`useAudioBoot` disabled). Own appId/productName/icon (`electron-builder.processor.yml`, `build/processor/`),
   data folder `%APPDATA%/Gritometro Procesador`. Released as `procesador-vX.Y.Z` with `--latest=false`.
 - Studio improvements go to every edition; keep party-only wording out of the studio (`AudioScreen studio` prop).
@@ -76,7 +77,9 @@ src/renderer/src/
                    recording of strips (input/pre/post) + buses, sample-aligned via trackTap.worklet.js with bus latency
                    compensated, streamed to disk, markers, sesion.json/txt; helpers in core/studio/multitrack.ts),
                    Interfaces (InterfacesView: every interface and channel metered in parallel, click = load that
-                   channel in the processor with its own saved setup, names/notes/copy/reset per channel),
+                   channel in the processor with its own saved setup, names/notes/copy/reset per channel;
+                   channels marked live keep running in parallel to their own output: core/audio/MultiProcessor.ts,
+                   one ProcessorEngine per live channel, follows the main power button),
                    Procesador (ProcessorView + processor.css + controls.tsx knobs/meters/icons: one mic → noise
                    reduction → gate → parametric EQ → de-esser → comp ×2 → saturator → limiter → VoiceMeeter Input /
                    any output, LUFS/true peak, EQ/dynamics/noise graphs, bypass A/B, presets, auto assistant; no emoji),

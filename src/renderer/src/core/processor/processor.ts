@@ -201,6 +201,8 @@ function mergeChannels(raw: unknown): Record<string, ChannelSetup> {
       outputGainDb: num(v.outputGainDb, 0, -24, 24),
       phaseInvert: !!v.phaseInvert,
       eqPosition: v.eqPosition === 'post' ? 'post' : 'pre',
+      live: !!v.live,
+      outputId: typeof v.outputId === 'string' ? v.outputId : null,
       updatedAt: num(v.updatedAt, 0)
     }
   }

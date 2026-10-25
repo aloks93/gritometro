@@ -4,7 +4,7 @@ import { listInputs, type InputDevice } from '../../core/audio/MicrophoneService
 import { autoTrim, logFreqs } from '../../core/mixer/mixer'
 import { autoMakeupDb, saturate, type CompParams } from '../../core/processor/dynamics'
 import type { NoiseResolution } from '../../core/processor/noise'
-import { channelKey, switchChannel } from '../../core/processor/channels'
+import { channelKey, liveChannels, loadedOutput, mainConfig, setLoadedOutput, switchChannel } from '../../core/processor/channels'
 import {
   applyChain,
   autoSetup,
@@ -81,7 +81,7 @@ const COLORS = {
 type ModuleId = keyof typeof COLORS
 type GraphTab = 'eq' | 'dynamics' | 'noise'
 
-export function ProcessorView(): JSX.Element {
+export function ProcessorView({ onOpenChannels }: { onOpenChannels?: () => void }): JSX.Element {
   const [cfg, set] = useProcessor()
   const state = useProcessorState()
   const [inputs, setInputs] = useState<InputDevice[]>([])
@@ -130,13 +130,15 @@ export function ProcessorView(): JSX.Element {
     []
   )
 
-  const outputLabel = cfg.output.deviceId ? (outputs.find((o) => o.deviceId === cfg.output.deviceId)?.label ?? null) : null
+  const main = mainConfig(cfg)
+  const outputLabel = main.output.deviceId ? (outputs.find((o) => o.deviceId === main.output.deviceId)?.label ?? null) : null
   const monitorLabel = cfg.monitor.deviceId ? (outputs.find((o) => o.deviceId === cfg.monitor.deviceId)?.label ?? null) : null
-  const warnings = processorWarnings(cfg, outputLabel, monitorLabel)
+  const warnings = processorWarnings(main, outputLabel, monitorLabel)
+  const parallel = liveChannels(cfg).length
 
   const power = (): void => {
     if (state.status === 'on' || state.status === 'starting') processorEngine.stop()
-    else void processorEngine.start(cfg)
+    else void processorEngine.start(main)
   }
 
   const focusModule = (id: ModuleId): void => {
@@ -168,7 +170,19 @@ export function ProcessorView(): JSX.Element {
             <small>Latencia</small>
             <b>{on ? `${state.latencyMs} ms` : `${processingLatencyMs(cfg, cfg.sampleRate ?? 48000).toFixed(1)} ms`}</b>
           </span>
+          {parallel > 0 && (
+            <span title="Canales que se procesan a la vez que este, cada uno con sus ajustes">
+              <small>En paralelo</small>
+              <b>{parallel}</b>
+            </span>
+          )}
         </div>
+        {onOpenChannels && (
+          <button className="vp-btn" onClick={onOpenChannels} title="Todas las entradas y canales a la vez">
+            <Icon name="mic" size={15} />
+            Canales
+          </button>
+        )}
         <button className={`vp-btn vp-ab ${cfg.bypass ? 'active' : ''}`} onClick={() => set({ bypass: !cfg.bypass })} title="Escuchar el micrófono sin procesar (tecla B)">
           {cfg.bypass ? 'BYPASS' : 'A/B'}
         </button>
@@ -251,6 +265,8 @@ export function ProcessorView(): JSX.Element {
 function IoPanel({ cfg, set, inputs, outputs, channels }: { cfg: ProcessorConfig; set: SetFn; inputs: InputDevice[]; outputs: MediaDeviceInfo[]; channels: number }): JSX.Element {
   const [guide, setGuide] = useState(false)
   const vm = outputs.filter((o) => isVirtual(o.label))
+  const output = loadedOutput(cfg)
+  const ownOutput = (cfg.channels[channelKey(cfg.input)]?.outputId ?? null) !== null
   return (
     <section className="vp-panel vp-io">
       <div className="vp-io-group">
@@ -275,10 +291,11 @@ function IoPanel({ cfg, set, inputs, outputs, channels }: { cfg: ProcessorConfig
           <select value={cfg.input.channel} onChange={(e) => set((c) => switchChannel(c, { ...c.input, channel: Number(e.target.value) }))} title="Cada canal guarda sus propios ajustes">
             <option value={-1}>Mezcla de todos</option>
             {Array.from({ length: Math.max(channels, cfg.input.channel + 1, 1) }, (_, i) => {
-              const name = cfg.channels[channelKey({ deviceId: cfg.input.deviceId, channel: i })]?.name
+              const setup = cfg.channels[channelKey({ deviceId: cfg.input.deviceId, channel: i })]
+              const name = setup?.name ? `Canal ${i + 1} · ${setup.name}` : `Canal ${i + 1}`
               return (
                 <option key={i} value={i}>
-                  {name ? `Canal ${i + 1} · ${name}` : `Canal ${i + 1}`}
+                  {setup?.live ? `${name} (en paralelo)` : name}
                 </option>
               )
             })}
@@ -300,8 +317,8 @@ function IoPanel({ cfg, set, inputs, outputs, channels }: { cfg: ProcessorConfig
           Salida
         </h3>
         <label className="vp-field">
-          <span>Dispositivo (VoiceMeeter Input recomendado)</span>
-          <select value={cfg.output.deviceId ?? ''} onChange={(e) => set({ output: { ...cfg.output, deviceId: e.target.value || null } })}>
+          <span>{ownOutput ? 'Salida propia de este canal' : 'Dispositivo (VoiceMeeter Input recomendado)'}</span>
+          <select value={output ?? ''} onChange={(e) => set((c) => setLoadedOutput(c, e.target.value || null))}>
             <option value="">Predeterminada del sistema</option>
             {outputs.map((o, i) => (
               <option key={o.deviceId} value={o.deviceId}>
@@ -313,7 +330,7 @@ function IoPanel({ cfg, set, inputs, outputs, channels }: { cfg: ProcessorConfig
         </label>
         <Switch on={!cfg.output.mute} onChange={(v) => set({ output: { ...cfg.output, mute: !v } })} labels={['SALIDA', 'MUTE']} title="Silenciar salida" />
         {vm.slice(0, 3).map((o) => (
-          <button key={o.deviceId} className={`vp-btn vp-chip ${cfg.output.deviceId === o.deviceId ? 'on' : ''}`} onClick={() => set({ output: { ...cfg.output, deviceId: o.deviceId } })} title={o.label}>
+          <button key={o.deviceId} className={`vp-btn vp-chip ${output === o.deviceId ? 'on' : ''}`} onClick={() => set((c) => setLoadedOutput(c, o.deviceId))} title={o.label}>
             {shortVm(o.label)}
           </button>
         ))}

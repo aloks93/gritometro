@@ -1,14 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
+import { multiProcessor } from '../../core/audio/MultiProcessor'
 import { processorEngine } from '../../core/audio/ProcessorEngine'
+import { mainConfig } from '../../core/processor/channels'
 import { api } from '../storage'
 import { useStore } from '../store'
 import { Icon } from './controls'
 import { resolveLang, useStudioTranslation, type StudioLangPref } from './i18n'
+import { InterfacesView } from './InterfacesView'
 import { useStudioPrefs } from './MonitorView'
 import { ProcessorView } from './ProcessorView'
+import { Segmented } from './widgets'
 import './studio.css'
 
-// Standalone "Gritómetro Procesador" edition: only the mic processor, with its own window chrome.
+// Standalone "Gritómetro Procesador" edition: only the mic processor (and its channel view for
+// multichannel interfaces), with its own window chrome.
+
+type Page = 'processor' | 'channels'
+let lastPage: Page = 'processor'
 
 export function ProcessorShell(): JSX.Element {
   const { data } = useStore()
@@ -18,11 +26,17 @@ export function ProcessorShell(): JSX.Element {
   // Out here, so a language change (which remounts the body) doesn't stop the audio
   useEffect(() => {
     document.title = 'Gritómetro Procesador'
-    return () => processorEngine.stop()
+    return () => {
+      processorEngine.stop()
+      multiProcessor.stopAll()
+    }
   }, [])
 
-  // Every edit goes live (parameters instantly, structure by rebuilding)
-  useEffect(() => processorEngine.apply(data.processor), [data.processor])
+  // Every edit goes live (parameters instantly, structure by rebuilding), parallel channels too
+  useEffect(() => {
+    processorEngine.apply(mainConfig(data.processor))
+    multiProcessor.apply(data.processor)
+  }, [data.processor])
 
   // Remounting on a language change lets every view render its Spanish source text again
   return <ProcessorBody key={lang} english={lang === 'en'} />
@@ -31,6 +45,15 @@ export function ProcessorShell(): JSX.Element {
 function ProcessorBody({ english }: { english: boolean }): JSX.Element {
   const [prefs, setPrefs] = useStudioPrefs()
   const [help, setHelp] = useState(false)
+  const [page, setPageState] = useState<Page>(lastPage)
+  const main = useRef<HTMLElement>(null)
+  const setPage = (p: Page): void => {
+    lastPage = p
+    setPageState(p)
+    if (main.current) main.current.scrollTop = 0
+  }
+  const setPageRef = useRef(setPage)
+  setPageRef.current = setPage
   const root = useRef<HTMLDivElement>(null)
   useStudioTranslation(english, root)
 
@@ -41,6 +64,8 @@ function ProcessorBody({ english }: { english: boolean }): JSX.Element {
         api()?.window.toggleFullscreen()
       } else if (e.key === 'Escape') setHelp(false)
       else if (e.key === '?' && !(e.target instanceof HTMLInputElement)) setHelp((h) => !h)
+      else if (e.altKey && e.key === '1') setPageRef.current('processor')
+      else if (e.altKey && e.key === '2') setPageRef.current('channels')
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -56,6 +81,14 @@ function ProcessorBody({ english }: { english: boolean }): JSX.Element {
             <span>Procesador vocal</span>
           </div>
         </div>
+        <Segmented<Page>
+          value={page}
+          onChange={setPage}
+          options={[
+            ['processor', 'Procesador'],
+            ['channels', 'Canales']
+          ]}
+        />
         <span className="vp-grow" />
         <select className="st-output st-lang" value={prefs.language} onChange={(e) => setPrefs({ language: e.target.value as StudioLangPref })} title="Idioma">
           <option value="auto">Auto</option>
@@ -69,8 +102,8 @@ function ProcessorBody({ english }: { english: boolean }): JSX.Element {
           <Icon name="fullscreen" size={16} />
         </button>
       </header>
-      <main className="st-main">
-        <ProcessorView />
+      <main className="st-main" ref={main}>
+        {page === 'processor' ? <ProcessorView onOpenChannels={() => setPage('channels')} /> : <InterfacesView onOpenProcessor={() => setPage('processor')} />}
       </main>
       {help && (
         <div className="st-help" onClick={() => setHelp(false)}>
@@ -86,6 +119,7 @@ function ProcessorBody({ english }: { english: boolean }): JSX.Element {
                 {(
                   [
                     ['B', 'Bypass A/B (micrófono sin procesar)'],
+                    ['Alt+1 / Alt+2', 'Procesador / Canales'],
                     ['F11', 'Pantalla completa'],
                     ['?', 'Mostrar esta ayuda'],
                     ['Arrastrar perilla', 'Subir/bajar · Shift = ajuste fino · doble clic = valor por defecto'],

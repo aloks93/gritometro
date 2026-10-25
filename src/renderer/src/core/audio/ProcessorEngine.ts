@@ -101,7 +101,7 @@ export function processorStructureKey(cfg: ProcessorConfig): string {
   return JSON.stringify([cfg.sampleRate, cfg.input.deviceId, cfg.input.channel, cfg.eqPosition, cfg.monitor.on, cfg.noise.resolution])
 }
 
-class ProcessorEngine {
+export class ProcessorEngine {
   private g: Graph | null = null
   private key = ''
   private latest: ProcessorConfig | null = null

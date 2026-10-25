@@ -4,6 +4,8 @@ import { chainOf, defaultProcessor } from './processor'
 // Per-channel setups for the mic processor. Every input channel of every interface keeps its
 // own processing; only one is loaded in the processor at a time. Switching channel stores the
 // one being edited exactly as it was and brings back the saved setup of the new one.
+// Channels marked "live" keep being processed in parallel (core/audio/MultiProcessor.ts) while
+// another one is loaded, each to its own output.
 
 export interface ChannelSetup {
   /** User name for the channel, e.g. "Micro del presentador" ('' = none) */
@@ -14,6 +16,10 @@ export interface ChannelSetup {
   outputGainDb: number
   phaseInvert: boolean
   eqPosition: ProcessorConfig['eqPosition']
+  /** Processed all the time, in parallel with the loaded channel */
+  live: boolean
+  /** Own output device ('' = system default), null = the processor's output */
+  outputId: string | null
   /** ms since epoch of the last time it was stored */
   updatedAt: number
 }
@@ -41,6 +47,8 @@ export function snapshotChannel(cfg: ProcessorConfig, previous?: Partial<Channel
     outputGainDb: cfg.outputGainDb,
     phaseInvert: cfg.phaseInvert,
     eqPosition: cfg.eqPosition,
+    live: previous?.live ?? false,
+    outputId: previous?.outputId ?? null,
     updatedAt: now
   }
 }
@@ -74,7 +82,7 @@ export function switchChannel(cfg: ProcessorConfig, input: ChannelInput, now = D
 /** True when a setup is exactly the clean default (unnamed, unprocessed, unity gains) */
 export function isBlank(s: ChannelSetup): boolean {
   const b = blankChannel(0)
-  return !s.name && !s.note && s.inputGainDb === 0 && s.outputGainDb === 0 && !s.phaseInvert && s.eqPosition === b.eqPosition && JSON.stringify(s.chain) === JSON.stringify(b.chain)
+  return !s.name && !s.note && !s.live && s.outputId === null && s.inputGainDb === 0 && s.outputGainDb === 0 && !s.phaseInvert && s.eqPosition === b.eqPosition && JSON.stringify(s.chain) === JSON.stringify(b.chain)
 }
 
 /** Stores the loaded channel without moving (e.g. before closing), keeping its name/note */
@@ -83,8 +91,10 @@ export function storeCurrent(cfg: ProcessorConfig, now = Date.now()): ProcessorC
   return { ...cfg, channels: { ...cfg.channels, [key]: snapshotChannel(cfg, cfg.channels[key], now) } }
 }
 
-/** Renames / annotates a channel (stored even if it was never loaded) */
-export function setChannelInfo(cfg: ProcessorConfig, key: string, info: Partial<Pick<ChannelSetup, 'name' | 'note'>>): ProcessorConfig {
+export type ChannelInfo = Partial<Pick<ChannelSetup, 'name' | 'note' | 'live' | 'outputId'>>
+
+/** Renames / annotates / routes a channel (stored even if it was never loaded) */
+export function setChannelInfo(cfg: ProcessorConfig, key: string, info: ChannelInfo): ProcessorConfig {
   const loaded = channelKey(cfg.input) === key
   const base = cfg.channels[key] ?? (loaded ? snapshotChannel(cfg) : blankChannel())
   return { ...cfg, channels: { ...cfg.channels, [key]: { ...base, ...info } } }
@@ -96,15 +106,20 @@ export function copyChannel(cfg: ProcessorConfig, fromKey: string, toKey: string
   const src = fromKey === loadedKey ? snapshotChannel(cfg, cfg.channels[fromKey], now) : cfg.channels[fromKey]
   if (!src || fromKey === toKey) return cfg
   const prev = cfg.channels[toKey]
-  const copy: ChannelSetup = { ...JSON.parse(JSON.stringify(src)), name: prev?.name ?? '', note: prev?.note ?? '', updatedAt: now }
+  const copy: ChannelSetup = { ...JSON.parse(JSON.stringify(src)), ...keepInfo(prev), updatedAt: now }
   const next = { ...cfg, channels: { ...cfg.channels, [toKey]: copy } }
   return toKey === loadedKey ? restore(next, copy) : next
 }
 
-/** Back to clean processing; names and notes stay */
+/** What stays with a channel when its processing is replaced */
+function keepInfo(prev: ChannelSetup | undefined): Pick<ChannelSetup, 'name' | 'note' | 'live' | 'outputId'> {
+  return { name: prev?.name ?? '', note: prev?.note ?? '', live: prev?.live ?? false, outputId: prev?.outputId ?? null }
+}
+
+/** Back to clean processing; name, note and routing stay */
 export function resetChannel(cfg: ProcessorConfig, key: string, now = Date.now()): ProcessorConfig {
   const prev = cfg.channels[key]
-  const blank = { ...blankChannel(now), name: prev?.name ?? '', note: prev?.note ?? '' }
+  const blank = { ...blankChannel(now), ...keepInfo(prev) }
   const next = { ...cfg, channels: { ...cfg.channels, [key]: blank } }
   return channelKey(cfg.input) === key ? restore(next, blank) : next
 }
@@ -119,6 +134,49 @@ export function forgetChannel(cfg: ProcessorConfig, key: string): ProcessorConfi
 export function channelView(cfg: ProcessorConfig, key: string): ChannelSetup | null {
   if (channelKey(cfg.input) === key) return snapshotChannel(cfg, cfg.channels[key])
   return cfg.channels[key] ?? null
+}
+
+// ---- Routing and parallel processing
+
+/** Output device of the loaded channel: its own one, or the processor's */
+export function loadedOutput(cfg: ProcessorConfig): string | null {
+  const own = cfg.channels[channelKey(cfg.input)]?.outputId
+  return own ?? cfg.output.deviceId
+}
+
+/** Picks the output for the loaded channel: into its own routing when it has one */
+export function setLoadedOutput(cfg: ProcessorConfig, deviceId: string | null): ProcessorConfig {
+  const key = channelKey(cfg.input)
+  if ((cfg.channels[key]?.outputId ?? null) !== null) return setChannelInfo(cfg, key, { outputId: deviceId ?? '' })
+  return { ...cfg, output: { ...cfg.output, deviceId } }
+}
+
+/** What the main (editing) engine runs: the processor as it is, with the channel's own output */
+export function mainConfig(cfg: ProcessorConfig): ProcessorConfig {
+  const out = loadedOutput(cfg)
+  return out === cfg.output.deviceId ? cfg : { ...cfg, output: { ...cfg.output, deviceId: out } }
+}
+
+/** Channels processed in parallel right now: marked live and not the one being edited */
+export function liveChannels(cfg: ProcessorConfig): string[] {
+  const loaded = channelKey(cfg.input)
+  return Object.keys(cfg.channels).filter((k) => k !== loaded && cfg.channels[k].live)
+}
+
+/**
+ * The full processor config a parallel channel runs: its saved processing on its own input,
+ * to its own output (or the processor's). No headphone monitor and no bypass (those belong to
+ * the channel being edited); the output mute silences every channel.
+ */
+export function channelConfig(cfg: ProcessorConfig, key: string): ProcessorConfig {
+  const s = cfg.channels[key] ?? blankChannel(0)
+  return {
+    ...restore(cfg, s),
+    input: parseChannelKey(key),
+    output: { deviceId: s.outputId ?? cfg.output.deviceId, mute: cfg.output.mute },
+    monitor: { ...cfg.monitor, on: false },
+    bypass: false
+  }
 }
 
 /** Short list of the active modules, e.g. ["Ruido", "Puerta", "EQ 5 bandas", "Comp 1", "Limitador"] */
