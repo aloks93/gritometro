@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron'
 import { promises as fs } from 'fs'
-import { join } from 'path'
+import { basename, join } from 'path'
 import { dataPath, readKey, writeKey } from './storage'
 
 let mainWindow: BrowserWindow | null = null
@@ -86,6 +86,35 @@ function setupIpc(): void {
     if (canceled || !filePath) return null
     await fs.writeFile(filePath, pdf)
     return filePath
+  })
+
+  // Studio report: render standalone HTML off-screen and print it, without touching the app window
+  ipcMain.handle('file:htmlToPdf', async (_e, defaultName: string, html: string) => {
+    if (!mainWindow) return null
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: defaultName,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    })
+    if (canceled || !filePath) return null
+    const win = new BrowserWindow({ show: false, webPreferences: { javascript: false, sandbox: true } })
+    try {
+      await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+      const pdf = await win.webContents.printToPDF({ landscape: true, printBackground: true, pageSize: 'A4' })
+      await fs.writeFile(filePath, pdf)
+      return filePath
+    } finally {
+      win.destroy()
+    }
+  })
+
+  ipcMain.handle('file:openBinary', async (_e, extensions: string[]) => {
+    if (!mainWindow) return null
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Audio', extensions }]
+    })
+    if (canceled || filePaths.length === 0) return null
+    return Promise.all(filePaths.map(async (p) => ({ name: basename(p), base64: (await fs.readFile(p)).toString('base64') })))
   })
 }
 

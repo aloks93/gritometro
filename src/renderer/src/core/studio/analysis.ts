@@ -1,4 +1,6 @@
 import { MIN_DB, type LevelReading } from '../audio/LevelAnalyzer'
+import { measureLoudness } from './loudness'
+import { medianPitch } from './pitch'
 
 // Pure measurement helpers for the studio mic comparator. No Web Audio here:
 // the engine hands over readings, averaged power spectra and raw PCM.
@@ -37,6 +39,14 @@ export interface TakeMetrics {
   clippedSamples?: number
   /** Peak envelope of the take (0..1) for the waveform thumbnail */
   envelope?: number[]
+  /** EBU R128 integrated loudness of the take, LUFS */
+  lufs?: number
+  /** Loudness range, LU */
+  lra?: number
+  /** Inter-sample (4× oversampled) peak, dBTP */
+  truePeakDb?: number
+  /** Median pitch of the voice, Hz (null = unpitched, e.g. spoken noise) */
+  pitchHz?: number | null
 }
 
 export interface HumResult {
@@ -87,10 +97,19 @@ export function bandShares(power: ArrayLike<number>, sampleRate: number, fftSize
   return { low: low / total, mid: mid / total, high: high / total }
 }
 
-/** Third-octave band levels, normalized to a 0 dB mean so mics of different gain overlay */
-export function bandCurve(power: ArrayLike<number>, sampleRate: number, fftSize: number): number[] {
+/**
+ * Linear power per third-octave band: 'mean' per bin (response shape) or 'sum'
+ * (band energy, what an RTA shows: pink noise reads flat).
+ */
+export function thirdOctavePower(
+  power: ArrayLike<number>,
+  sampleRate: number,
+  fftSize: number,
+  centers: number[] = BAND_CENTERS,
+  mode: 'mean' | 'sum' = 'mean'
+): number[] {
   const k = Math.pow(2, 1 / 6)
-  const levels = BAND_CENTERS.map((fc) => {
+  return centers.map((fc) => {
     const lo = fc / k
     const hi = fc * k
     let sum = 0
@@ -107,8 +126,13 @@ export function bandCurve(power: ArrayLike<number>, sampleRate: number, fftSize:
       const i = Math.min(power.length - 1, Math.max(1, Math.round((fc * fftSize) / sampleRate)))
       return power[i]
     }
-    return sum / n
+    return mode === 'sum' ? sum : sum / n
   })
+}
+
+/** Third-octave band levels, normalized to a 0 dB mean so mics of different gain overlay */
+export function bandCurve(power: ArrayLike<number>, sampleRate: number, fftSize: number): number[] {
+  const levels = thirdOctavePower(power, sampleRate, fftSize)
   const mean = levels.reduce((a, b) => a + b, 0) / levels.length
   return levels.map((p) => Math.round((powerToDb(p) - powerToDb(mean)) * 10) / 10)
 }
@@ -280,6 +304,11 @@ export function summarizeTake(input: {
     metrics.peakDb = Math.max(metrics.peakDb, stats.peakDb)
     metrics.crestDb = round1(metrics.peakDb - levelDb)
     metrics.envelope = envelope(pcm)
+    const loud = measureLoudness(pcm, sampleRate)
+    metrics.lufs = round1(loud.integrated)
+    metrics.lra = loud.lra
+    metrics.truePeakDb = round1(Math.max(loud.truePeakDb, metrics.peakDb))
+    metrics.pitchHz = medianPitch(pcm, sampleRate)
   }
   return metrics
 }
@@ -311,6 +340,7 @@ export function technicalScore(m: TakeMetrics): ScoreBreakdown {
   const clipping = m.clipCount === 0 ? 15 : m.clipCount < 5 ? 7 : 0
   if (m.clipCount > 0) notes.push(`Saturó ${m.clipCount} veces`)
   else if (m.clippedSamples) notes.push(`${m.clippedSamples} muestras a 0 dBFS`)
+  else if (m.truePeakDb !== undefined && m.truePeakDb > -1) notes.push(`True peak ${m.truePeakDb} dBTP: deja más margen`)
 
   // Informational only (weights unchanged): these point at cabling/interface problems
   if (m.hum) notes.push(`Zumbido de ${m.hum.hz} Hz (+${m.hum.prominenceDb} dB): revisa tierra y cables`)
@@ -335,6 +365,24 @@ export function technicalScore(m: TakeMetrics): ScoreBreakdown {
   return { total: Math.round(snr + level + clipping + balance), snr: Math.round(snr), level: Math.round(level), clipping, balance, notes }
 }
 
+/** Per-band difference a − b of two normalized curves (what mic A adds over B) */
+export function curveDifference(a: number[], b: number[]): number[] {
+  return a.map((v, i) => round1(v - (b[i] ?? 0)))
+}
+
+/** Smooths a curve with a centered moving average (in bands), for readable overlays */
+export function smoothCurve(curve: number[], radius = 1): number[] {
+  return curve.map((_, i) => {
+    let sum = 0
+    let n = 0
+    for (let j = Math.max(0, i - radius); j <= Math.min(curve.length - 1, i + radius); j++) {
+      sum += curve[j]
+      n++
+    }
+    return round1(sum / n)
+  })
+}
+
 /** RMS of raw PCM, used to loudness-match playback in A/B tests */
 export function pcmRms(pcm: Float32Array): number {
   let sum = 0
@@ -348,29 +396,80 @@ export function matchGain(rms: number, targetRms: number, maxGain = 8): number {
   return Math.min(maxGain, targetRms / rms)
 }
 
-/** 16-bit PCM mono WAV */
-export function encodeWav(pcm: Float32Array, sampleRate: number): ArrayBuffer {
-  const buffer = new ArrayBuffer(44 + pcm.length * 2)
+export type WavFormat = 16 | 24 | 'float'
+
+/** Mono WAV: 16/24-bit integer PCM or 32-bit float */
+export function encodeWav(pcm: Float32Array, sampleRate: number, format: WavFormat = 16): ArrayBuffer {
+  const bytes = format === 16 ? 2 : format === 24 ? 3 : 4
+  const buffer = new ArrayBuffer(44 + pcm.length * bytes)
   const v = new DataView(buffer)
   const str = (o: number, s: string): void => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)))
   str(0, 'RIFF')
-  v.setUint32(4, 36 + pcm.length * 2, true)
+  v.setUint32(4, 36 + pcm.length * bytes, true)
   str(8, 'WAVE')
   str(12, 'fmt ')
   v.setUint32(16, 16, true)
-  v.setUint16(20, 1, true) // PCM
+  v.setUint16(20, format === 'float' ? 3 : 1, true) // 1 = PCM, 3 = IEEE float
   v.setUint16(22, 1, true) // mono
   v.setUint32(24, sampleRate, true)
-  v.setUint32(28, sampleRate * 2, true)
-  v.setUint16(32, 2, true)
-  v.setUint16(34, 16, true)
+  v.setUint32(28, sampleRate * bytes, true)
+  v.setUint16(32, bytes, true)
+  v.setUint16(34, bytes * 8, true)
   str(36, 'data')
-  v.setUint32(40, pcm.length * 2, true)
+  v.setUint32(40, pcm.length * bytes, true)
   for (let i = 0; i < pcm.length; i++) {
+    const o = 44 + i * bytes
+    if (format === 'float') {
+      v.setFloat32(o, pcm[i], true)
+      continue
+    }
     const s = Math.max(-1, Math.min(1, pcm[i]))
-    v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+    if (format === 16) {
+      v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true)
+    } else {
+      const int = Math.round(s < 0 ? s * 0x800000 : s * 0x7fffff)
+      v.setUint8(o, int & 0xff)
+      v.setUint8(o + 1, (int >> 8) & 0xff)
+      v.setUint8(o + 2, (int >> 16) & 0xff)
+    }
   }
   return buffer
+}
+
+/** Reads a mono or multichannel PCM/float WAV back (first channel), for importing reference takes */
+export function decodeWav(buf: ArrayBuffer): { pcm: Float32Array; sampleRate: number } | null {
+  const v = new DataView(buf)
+  const tag = (o: number): string => String.fromCharCode(v.getUint8(o), v.getUint8(o + 1), v.getUint8(o + 2), v.getUint8(o + 3))
+  if (buf.byteLength < 44 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return null
+  let o = 12
+  let fmt: { format: number; channels: number; sampleRate: number; bits: number } | null = null
+  while (o + 8 <= buf.byteLength) {
+    const id = tag(o)
+    const size = v.getUint32(o + 4, true)
+    const body = o + 8
+    if (id === 'fmt ') {
+      fmt = { format: v.getUint16(body, true), channels: v.getUint16(body + 2, true), sampleRate: v.getUint32(body + 4, true), bits: v.getUint16(body + 14, true) }
+      // WAVE_FORMAT_EXTENSIBLE carries the real format in its sub-GUID
+      if (fmt.format === 0xfffe && size >= 26) fmt.format = v.getUint16(body + 24, true)
+    } else if (id === 'data' && fmt) {
+      const bytes = fmt.bits / 8
+      const frame = bytes * fmt.channels
+      const n = Math.floor(Math.min(size, buf.byteLength - body) / frame)
+      const pcm = new Float32Array(n)
+      for (let i = 0; i < n; i++) {
+        const p = body + i * frame
+        if (fmt.format === 3 && fmt.bits === 32) pcm[i] = v.getFloat32(p, true)
+        else if (fmt.bits === 16) pcm[i] = v.getInt16(p, true) / 0x8000
+        else if (fmt.bits === 24) pcm[i] = (((v.getUint8(p + 2) << 24) | (v.getUint8(p + 1) << 16) | (v.getUint8(p) << 8)) >> 8) / 0x800000
+        else if (fmt.bits === 32) pcm[i] = v.getInt32(p, true) / 0x80000000
+        else if (fmt.bits === 8) pcm[i] = (v.getUint8(p) - 128) / 128
+        else return null
+      }
+      return { pcm, sampleRate: fmt.sampleRate }
+    }
+    o = body + size + (size % 2)
+  }
+  return null
 }
 
 function clamp(v: number, lo: number, hi: number): number {

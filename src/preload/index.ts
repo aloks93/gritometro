@@ -13,7 +13,9 @@ const api = {
     save: (defaultName: string, content: string, encoding: 'utf8' | 'base64' = 'utf8'): Promise<string | null> =>
       ipcRenderer.invoke('file:save', defaultName, content, encoding),
     open: (extensions: string[]): Promise<string | null> => ipcRenderer.invoke('file:open', extensions),
-    printPdf: (defaultName: string): Promise<string | null> => ipcRenderer.invoke('file:printPdf', defaultName)
+    printPdf: (defaultName: string): Promise<string | null> => ipcRenderer.invoke('file:printPdf', defaultName),
+    htmlToPdf: (defaultName: string, html: string): Promise<string | null> => ipcRenderer.invoke('file:htmlToPdf', defaultName, html),
+    openBinary: (extensions: string[]): Promise<{ name: string; base64: string }[] | null> => ipcRenderer.invoke('file:openBinary', extensions)
   }
 }
 

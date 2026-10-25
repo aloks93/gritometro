@@ -2,10 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { defaultAudioSettings, type AudioSettings } from '../core/audio/AudioConfig'
 import type { Player } from '../core/players/players'
 import { defaultGameSettings, type GameSettings } from '../core/settings/settings'
-import { defaultStudio, type StudioData } from '../core/studio/studio'
+import { mergeStudio, type StudioData } from '../core/studio/studio'
 import type { CustomTheme, Theme } from '../themes/Theme'
 import { DEFAULT_THEME_ID, resolveTheme } from '../themes/registry'
-import { load, save } from './storage'
+import { load, saveDebounced } from './storage'
 
 export interface RecordEntry {
   id: string
@@ -67,7 +67,7 @@ async function loadAll(): Promise<AppData> {
     records,
     customThemes,
     themeId,
-    studio: { ...defaultStudio(), ...studio }
+    studio: mergeStudio(studio)
   }
 }
 
@@ -83,7 +83,7 @@ export function StoreProvider({ children }: { children: ReactNode }): JSX.Elemen
       if (!prev) return prev
       const next = typeof value === 'function' ? (value as (p: AppData[K]) => AppData[K])(prev[key]) : value
       if (next === prev[key]) return prev
-      save(KEYS[key], next)
+      saveDebounced(KEYS[key], next)
       return { ...prev, [key]: next }
     })
   }, [])

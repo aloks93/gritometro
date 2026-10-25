@@ -6,6 +6,8 @@ import {
   BAND_CENTERS,
   bandCurve,
   bandShares,
+  curveDifference,
+  decodeWav,
   detectHum,
   dominantFrequency,
   encodeWav,
@@ -14,6 +16,7 @@ import {
   noteName,
   pcmRms,
   pcmStats,
+  smoothCurve,
   spectralCentroid,
   summarizeTake,
   technicalScore
@@ -169,5 +172,32 @@ describe('pcm helpers', () => {
   it('envelope keeps the peak of each slice', () => {
     const e = envelope(new Float32Array([0.1, -0.9, 0.2, 0.3]), 2)
     expect(e).toEqual([0.9, 0.3])
+  })
+})
+describe('extended take analysis', () => {
+  it('adds loudness, true peak and pitch when PCM is available', () => {
+    const pcm = new Float32Array(SR * 3)
+    for (let i = 0; i < pcm.length; i++) pcm[i] = 0.1 * Math.sin((2 * Math.PI * 220 * i) / SR)
+    const m = summarizeTake({ frames: frames(Array(180).fill(-35)), noiseFloorDb: -70, power: spectrum(), sampleRate: SR, fftSize: FFT, pcm })
+    expect(m.lufs).toBeGreaterThan(-25)
+    expect(m.lufs).toBeLessThan(-21)
+    expect(m.truePeakDb).toBeCloseTo(-20, 0)
+    expect(m.pitchHz).toBeCloseTo(220, -1)
+  })
+
+  it('curve difference and smoothing', () => {
+    expect(curveDifference([1, 2, 3], [1, 1, 1])).toEqual([0, 1, 2])
+    expect(smoothCurve([0, 3, 0], 1)).toEqual([1.5, 1, 1.5])
+  })
+
+  it('round-trips 16/24-bit and float WAV', () => {
+    const x = new Float32Array([0, 0.5, -0.5, 0.25, -1])
+    for (const f of [16, 24, 'float'] as const) {
+      const back = decodeWav(encodeWav(x, SR, f))!
+      expect(back.sampleRate).toBe(SR)
+      expect(back.pcm.length).toBe(x.length)
+      back.pcm.forEach((v, i) => expect(v).toBeCloseTo(x[i], 3))
+    }
+    expect(decodeWav(new ArrayBuffer(10))).toBeNull()
   })
 })

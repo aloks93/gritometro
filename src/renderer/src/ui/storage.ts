@@ -29,6 +29,34 @@ export async function save(key: string, value: unknown): Promise<void> {
   }
 }
 
+// Coalesces rapid updates (typing a name, dragging a slider) into one write per key.
+// Writes for the same key are chained so an older value can never land after a newer one.
+const pending = new Map<string, { value: unknown; timer: ReturnType<typeof setTimeout> }>()
+const chains = new Map<string, Promise<void>>()
+
+function flushKey(key: string): Promise<void> {
+  const p = pending.get(key)
+  if (!p) return chains.get(key) ?? Promise.resolve()
+  clearTimeout(p.timer)
+  pending.delete(key)
+  const next = (chains.get(key) ?? Promise.resolve()).then(() => save(key, p.value))
+  chains.set(key, next)
+  return next
+}
+
+export function saveDebounced(key: string, value: unknown, ms = 250): void {
+  const prev = pending.get(key)
+  if (prev) clearTimeout(prev.timer)
+  pending.set(key, { value, timer: setTimeout(() => void flushKey(key), ms) })
+}
+
+/** Writes everything still waiting (called before the window closes) */
+export function flushSaves(): Promise<void> {
+  return Promise.all([...pending.keys()].map(flushKey)).then(() => undefined)
+}
+
+if (typeof window !== 'undefined') window.addEventListener('beforeunload', () => void flushSaves())
+
 export async function saveFile(name: string, content: string, encoding: 'utf8' | 'base64' = 'utf8'): Promise<string | null> {
   const a = api()
   if (a) return a.file.save(name, content, encoding)
@@ -63,5 +91,47 @@ export function readFileAsDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(String(reader.result))
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(file)
+  })
+}
+
+export function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf)
+  let s = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(s)
+}
+
+export function fromBase64(b64: string): ArrayBuffer {
+  const s = atob(b64)
+  const out = new Uint8Array(s.length)
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i)
+  return out.buffer
+}
+
+/** Standalone HTML → PDF (Electron), or the browser's print dialog as a fallback */
+export async function saveHtmlAsPdf(name: string, html: string): Promise<string | null> {
+  const a = api()
+  if (a) return a.file.htmlToPdf(name, html)
+  const w = window.open('', '_blank')
+  if (!w) return null
+  w.document.write(html)
+  w.document.close()
+  w.print()
+  return name
+}
+
+export async function openBinaryFiles(extensions: string[]): Promise<{ name: string; data: ArrayBuffer }[]> {
+  const a = api()
+  if (a) {
+    const files = await a.file.openBinary(extensions)
+    return (files ?? []).map((f) => ({ name: f.name, data: fromBase64(f.base64) }))
+  }
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.multiple = true
+    input.accept = extensions.map((e) => `.${e}`).join(',')
+    input.onchange = async () => resolve(await Promise.all([...(input.files ?? [])].map(async (f) => ({ name: f.name, data: await f.arrayBuffer() }))))
+    input.click()
   })
 }
