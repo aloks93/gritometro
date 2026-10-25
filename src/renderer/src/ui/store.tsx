@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { defaultAudioSettings, type AudioSettings } from '../core/audio/AudioConfig'
 import type { Player } from '../core/players/players'
 import { defaultGameSettings, type GameSettings } from '../core/settings/settings'
+import { defaultStudio, type StudioData } from '../core/studio/studio'
 import type { CustomTheme, Theme } from '../themes/Theme'
 import { DEFAULT_THEME_ID, resolveTheme } from '../themes/registry'
 import { load, save } from './storage'
@@ -24,6 +25,7 @@ export interface AppData {
   records: RecordEntry[]
   customThemes: CustomTheme[]
   themeId: string
+  studio: StudioData
 }
 
 const KEYS: Record<keyof AppData, string> = {
@@ -32,7 +34,8 @@ const KEYS: Record<keyof AppData, string> = {
   players: 'players',
   records: 'records',
   customThemes: 'custom-themes',
-  themeId: 'theme'
+  themeId: 'theme',
+  studio: 'studio'
 }
 
 type Updater<T> = T | ((prev: T) => T)
@@ -46,13 +49,14 @@ interface Store {
 const StoreContext = createContext<Store | null>(null)
 
 async function loadAll(): Promise<AppData> {
-  const [settings, audio, players, records, customThemes, themeId] = await Promise.all([
+  const [settings, audio, players, records, customThemes, themeId, studio] = await Promise.all([
     load<Partial<GameSettings>>(KEYS.settings, {}),
     load<AudioSettings | null>(KEYS.audio, null),
     load<Player[]>(KEYS.players, []),
     load<RecordEntry[]>(KEYS.records, []),
     load<CustomTheme[]>(KEYS.customThemes, []),
-    load<string>(KEYS.themeId, DEFAULT_THEME_ID)
+    load<string>(KEYS.themeId, DEFAULT_THEME_ID),
+    load<Partial<StudioData>>(KEYS.studio, {})
   ])
   // Merge with defaults so settings added in newer versions get sane values
   const audioSettings = audio && audio.profiles?.length ? { ...defaultAudioSettings(), ...audio } : defaultAudioSettings()
@@ -62,7 +66,8 @@ async function loadAll(): Promise<AppData> {
     players,
     records,
     customThemes,
-    themeId
+    themeId,
+    studio: { ...defaultStudio(), ...studio }
   }
 }
 

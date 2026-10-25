@@ -336,7 +336,7 @@ function Podium({
   navigate: Navigate
   isSilence: boolean
 }): JSX.Element {
-  const { theme } = useStore()
+  const { theme, data } = useStore()
   const top = standings.slice(0, 3)
   const winner = top[0]
   const order = [top[1], top[0], top[2]]
@@ -346,6 +346,7 @@ function Podium({
   return (
     <div className="screen podium-screen">
       <h1 className="podium-title">🏆 {theme.texts.winnerTitle}</h1>
+      {data.settings.birthdayName && <p className="podium-party">🎂 Cumpleaños de {data.settings.birthdayName}</p>}
       <div className="podium">
         {order.map((s, i) =>
           s ? (

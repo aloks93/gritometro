@@ -29,6 +29,7 @@ class AudioEngine {
   private stateListeners = new Set<StateListener>()
   private _state: EngineState = { status: 'idle' }
   private _spectrum: Uint8Array<ArrayBuffer> = new Uint8Array(1024)
+  private _spectrumDb: Float32Array<ArrayBuffer> = new Float32Array(4096)
   last: LevelReading | null = null
 
   get state(): EngineState {
@@ -102,6 +103,81 @@ class AudioEngine {
     if (!this.input) return null
     this.input.analyser.getByteFrequencyData(this._spectrum)
     return this._spectrum
+  }
+
+  /** Last analysed time-domain frame (post-gain), for oscilloscope views */
+  waveform(): Float32Array | null {
+    return this.input ? this.buffer : null
+  }
+
+  /** High-resolution spectrum in dBFS per bin (8192 FFT), for the studio */
+  spectrumDb(): { data: Float32Array; sampleRate: number; fftSize: number } | null {
+    if (!this.input) return null
+    const a = this.input.spectrumAnalyser
+    if (this._spectrumDb.length !== a.frequencyBinCount) this._spectrumDb = new Float32Array(a.frequencyBinCount)
+    a.getFloatFrequencyData(this._spectrumDb)
+    return { data: this._spectrumDb, sampleRate: this.input.sampleRate, fftSize: a.fftSize }
+  }
+
+  /**
+   * Records a take: level readings, the linear power spectrum averaged over frames
+   * louder than `voicedAboveDb`, and raw post-gain PCM for playback/WAV export.
+   */
+  captureTake(
+    ms: number,
+    voicedAboveDb: number
+  ): Promise<{ frames: LevelReading[]; power: Float64Array; pcm: Float32Array; sampleRate: number; fftSize: number }> {
+    const input = this.input
+    if (!input) return Promise.reject(new Error('El micrófono no está abierto.'))
+    const fftSize = input.spectrumAnalyser.fftSize
+    const bins = input.spectrumAnalyser.frequencyBinCount
+    const voicedPower = new Float64Array(bins)
+    const allPower = new Float64Array(bins)
+    let voicedCount = 0
+    let allCount = 0
+    const frames: LevelReading[] = []
+    const chunks: Float32Array[] = []
+
+    // ScriptProcessor is deprecated but universally available and enough for a mono tap
+    const proc = input.context.createScriptProcessor(4096, 1, 1)
+    const mute = input.context.createGain()
+    mute.gain.value = 0
+    proc.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)))
+    input.tap.connect(proc)
+    proc.connect(mute).connect(input.context.destination)
+
+    const off = this.onReading((r) => {
+      frames.push(r)
+      const s = this.spectrumDb()
+      if (!s) return
+      const voiced = r.rmsDb > voicedAboveDb
+      for (let i = 0; i < bins; i++) {
+        const p = Math.pow(10, s.data[i] / 10)
+        allPower[i] += p
+        if (voiced) voicedPower[i] += p
+      }
+      allCount++
+      if (voiced) voicedCount++
+    })
+
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        off()
+        proc.disconnect()
+        mute.disconnect()
+        // Fall back to every frame if nothing cleared the voiced threshold
+        const [power, n] = voicedCount > 0 ? [voicedPower, voicedCount] : [allPower, allCount]
+        if (n > 0) for (let i = 0; i < bins; i++) power[i] /= n
+        const total = chunks.reduce((n, c) => n + c.length, 0)
+        const pcm = new Float32Array(total)
+        let o = 0
+        for (const c of chunks) {
+          pcm.set(c, o)
+          o += c.length
+        }
+        resolve({ frames, power, pcm, sampleRate: input.sampleRate, fftSize })
+      }, ms)
+    })
   }
 
   onReading(l: ReadingListener): () => void {

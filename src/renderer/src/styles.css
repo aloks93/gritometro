@@ -1251,3 +1251,39 @@ details li {
     gap: 1em;
   }
 }
+
+/* ---------- Birthday ---------- */
+.birthday-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.5em 1.4em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c-primary) 18%, transparent);
+  border: 2px solid var(--c-primary);
+  font-size: 1.5em;
+  font-weight: 700;
+}
+.birthday-banner strong {
+  font-family: var(--font-display);
+  font-weight: 400;
+  color: var(--c-primary);
+  font-size: 1.2em;
+}
+.birthday-cake {
+  display: inline-block;
+  animation: wobble 2s ease-in-out infinite;
+}
+.home-title {
+  cursor: default;
+}
+.podium-party {
+  margin: -1.2em 0 0;
+  font-size: 1.4em;
+  font-weight: 700;
+  color: var(--c-accent);
+}
+.certificate-party {
+  font-weight: 700;
+  color: color-mix(in srgb, var(--c-primary) 55%, black);
+}

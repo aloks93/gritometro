@@ -1,6 +1,8 @@
 # Gritómetro
 
-Electron desktop app that measures who screams loudest into a microphone (one mic, turn-based). Built for a kids' birthday party: themed UIs (default: "Fábrica de Monstruos"), several challenge modes, records, certificates. UI text is Spanish; code and comments are English.
+Electron desktop app that measures who screams loudest into a microphone (one mic, turn-based). Built for a kids' birthday party: themed UIs (default: "Fábrica de Monstruos"), several challenge modes, records, certificates, birthday name (Ajustes → Cumpleañera). UI text is Spanish; code and comments are English.
+
+It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professional audio interface for testing and comparing microphones. Toggle with **Ctrl+Shift+S** or **5 quick clicks on the home title**; exit with the "Salir del modo estudio" button. It is intentionally not listed anywhere in the party UI.
 
 ## Commands
 - `npm run dev` – app with hot reload
@@ -19,9 +21,14 @@ src/renderer/src/
                    Calibration (noise floor), ScoreEngine (scream score + SilenceWatcher)
     game/          GameMode contract, registry, modes/*
     players/       players, teams, avatars, age handicap
-    settings/      game settings + defaults
+    settings/      game settings + defaults (appMode, birthdayName)
+    studio/        mic-comparison analysis (pure): third-octave curve, centroid, band shares,
+                   SNR/crest, technicalScore, loudness matching, WAV encoder; StudioData model
   themes/          Theme contract, registry, one folder per theme
   ui/              React: store (persisted app state), hooks, sound, components/, screens/
+  ui/studio/       Studio shell (own scoped CSS, does not use party themes): Monitor (meters,
+                   spectrum, scope), Comparador (takes, metrics table, response chart, blind A/B),
+                   playback.ts (in-memory PCM takes — never persisted, only metrics are)
   App.tsx          router (Route union in ui/nav.ts), theme CSS vars, audio boot
 ```
 
@@ -39,8 +46,10 @@ src/renderer/src/
 - New theme: `/nuevo-tema` skill (or `themes/<id>/index.ts` + `registry.ts`).
 - Audio routing (VoiceMeeter, consoles): `/configurar-audio`. Score tuning: `/ajustar-puntaje`.
 - Packaging: `/empaquetar`. Pre-party check: `/checklist-fiesta`.
+- Studio mode / mic comparison: `/modo-estudio`.
 
 ## Notes
+- App icon (`build/icon.svg` → `build/icon.png`) is deliberately neutral/professional, because the same exe serves the studio mode. Do not make it kid-themed.
 - Theme art must be original (no Disney/Pixar logos or characters). Users can upload their own images per custom theme.
 - Electron does not support `window.prompt`; use inline inputs. `confirm()` works.
 - Verify UI changes by running the app; for automated screenshots launch Electron with `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`.

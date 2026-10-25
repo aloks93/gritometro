@@ -3,7 +3,8 @@ import { useStore } from '../store'
 import { api } from '../storage'
 
 export function Certificate({ name, detail, onClose }: { name: string; detail: string; onClose: () => void }): JSX.Element {
-  const { theme } = useStore()
+  const { theme, data } = useStore()
+  const birthday = data.settings.birthdayName
   const [msg, setMsg] = useState('')
   const date = new Date().toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -24,6 +25,7 @@ export function Certificate({ name, detail, onClose }: { name: string; detail: s
         <p className="certificate-name">{name}</p>
         <p className="certificate-body">{theme.texts.certificateBody}</p>
         <p className="certificate-detail">{detail}</p>
+        {birthday && <p className="certificate-party">🎂 Fiesta de cumpleaños de {birthday}</p>}
         <div className="certificate-footer">
           <span>{date}</span>
           <span className="certificate-seal">🏅</span>

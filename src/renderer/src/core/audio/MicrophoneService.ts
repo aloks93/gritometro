@@ -10,6 +10,10 @@ export interface InputDevice {
 export interface OpenInput {
   context: AudioContext
   analyser: AnalyserNode
+  /** High-resolution analyser (8192 FFT) for the studio spectrum */
+  spectrumAnalyser: AnalyserNode
+  /** Post-gain node to tap for raw PCM capture */
+  tap: AudioNode
   stream: MediaStream
   /** Channels reported by the device */
   channelCount: number
@@ -65,6 +69,12 @@ export async function openInput(profile: AudioProfile, onEnded: () => void): Pro
   analyser.fftSize = 2048
   analyser.smoothingTimeConstant = 0
 
+  const spectrumAnalyser = context.createAnalyser()
+  spectrumAnalyser.fftSize = 8192
+  spectrumAnalyser.smoothingTimeConstant = 0.5
+  spectrumAnalyser.minDecibels = -120
+  spectrumAnalyser.maxDecibels = 0
+
   if (typeof profile.channel === 'number' && channelCount > 1) {
     const splitter = context.createChannelSplitter(channelCount)
     source.connect(splitter)
@@ -73,6 +83,7 @@ export async function openInput(profile: AudioProfile, onEnded: () => void): Pro
     source.connect(gain)
   }
   gain.connect(analyser)
+  gain.connect(spectrumAnalyser)
 
   const handleEnded = (): void => onEnded()
   track.addEventListener('ended', handleEnded)
@@ -80,6 +91,8 @@ export async function openInput(profile: AudioProfile, onEnded: () => void): Pro
   return {
     context,
     analyser,
+    spectrumAnalyser,
+    tap: gain,
     stream,
     channelCount,
     sampleRate: context.sampleRate,

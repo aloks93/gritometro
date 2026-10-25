@@ -10,6 +10,7 @@ Recorre esta lista con el usuario; marca lo que ya está y ayuda con lo que falt
 ## Un día antes
 - [ ] `.exe` portable generado y probado en la PC de la fiesta (ver `/empaquetar`).
 - [ ] Jugadores cargados con nombre y edad (bonus para los peques). Fotos opcionales.
+- [ ] Nombre y edad de la cumpleañera en Ajustes → Cumpleañera (aparece en inicio, podio, certificados y fotos).
 - [ ] Tema elegido; título personalizado ("Gritómetro de <nombre>"), logo/fondo si se quiere.
 - [ ] Orden de retos planeado (sugerencia: Ranking para calentar → Torneo → Tanque por equipos → Reto del silencio para calmar).
 - [ ] Récords de prueba borrados (Récords → Borrar).

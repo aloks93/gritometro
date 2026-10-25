@@ -1,6 +1,13 @@
 import type { HandicapRule } from '../players/players'
 
+export type AppMode = 'party' | 'studio'
+
 export interface GameSettings {
+  /** 'studio' = hidden professional mic-testing interface */
+  appMode: AppMode
+  /** Name of the birthday girl/boy, shown on home, certificates and photos */
+  birthdayName: string
+  birthdayAge?: number
   countdownSeconds: number
   screamSeconds: number
   /** Upper limit for the silence challenge */
@@ -19,6 +26,8 @@ export interface GameSettings {
 
 export function defaultGameSettings(): GameSettings {
   return {
+    appMode: 'party',
+    birthdayName: '',
     countdownSeconds: 3,
     screamSeconds: 3,
     silenceMaxSeconds: 30,

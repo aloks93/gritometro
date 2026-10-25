@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Meter } from '../components/Meter'
 import { useEngineState, useLevel } from '../hooks'
 import type { Navigate } from '../nav'
@@ -6,7 +6,7 @@ import { api } from '../storage'
 import { useStore } from '../store'
 
 export function HomeScreen({ navigate }: { navigate: Navigate }): JSX.Element {
-  const { data, theme } = useStore()
+  const { data, theme, update } = useStore()
   const engine = useEngineState()
   const { level } = useLevel()
   const [held, setHeld] = useState(0)
@@ -16,14 +16,37 @@ export function HomeScreen({ navigate }: { navigate: Navigate }): JSX.Element {
     setHeld((h) => Math.max(level, h - 0.004))
   }, [level])
 
+  // Hidden studio switch: 5 quick clicks on the title (same as Ctrl+Shift+S)
+  const clicks = useRef<number[]>([])
+  const onTitleClick = (): void => {
+    const now = Date.now()
+    clicks.current = [...clicks.current.filter((t) => now - t < 2500), now]
+    if (clicks.current.length >= 5) {
+      clicks.current = []
+      update('settings', (s) => ({ ...s, appMode: 'studio' }))
+    }
+  }
+
+  const { birthdayName, birthdayAge } = data.settings
   const best = data.records.reduce((m, r) => (r.score > m.score ? r : m), { score: 0, playerName: '' })
 
   return (
     <div className="screen home-screen">
       <div className="home-hero">
         {theme.images.logo && <img className="home-logo" src={theme.images.logo} alt="" />}
-        <h1 className="home-title">{theme.texts.appTitle}</h1>
+        <h1 className="home-title" onClick={onTitleClick}>
+          {theme.texts.appTitle}
+        </h1>
         <p className="home-subtitle">{theme.texts.subtitle}</p>
+        {birthdayName && (
+          <div className="birthday-banner">
+            <span className="birthday-cake">🎂</span>
+            <span>
+              ¡Feliz cumpleaños, <strong>{birthdayName}</strong>!{birthdayAge ? ` · ${birthdayAge} años` : ''}
+            </span>
+            <span className="birthday-cake">🎉</span>
+          </div>
+        )}
         <div className="row center">
           <button className="btn primary huge" onClick={() => navigate({ name: data.players.length ? 'modes' : 'players' })}>
             🎮 ¡Jugar!

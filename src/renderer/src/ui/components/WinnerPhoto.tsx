@@ -4,7 +4,8 @@ import { saveFile } from '../storage'
 
 /** Webcam snapshot of the winner with a themed banner, saved as PNG */
 export function WinnerPhoto({ name, detail, onClose }: { name: string; detail: string; onClose: () => void }): JSX.Element {
-  const { theme } = useStore()
+  const { theme, data } = useStore()
+  const birthday = data.settings.birthdayName
   const video = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState('')
   const [shot, setShot] = useState<string | null>(null)
@@ -46,7 +47,7 @@ export function WinnerPhoto({ name, detail, onClose }: { name: string; detail: s
     g.fillText(`${theme.texts.winnerTitle}: ${name}`, canvas.width / 2, canvas.height - bannerH * 0.5)
     g.fillStyle = theme.tokens.text
     g.font = `${bannerH * 0.2}px ${theme.tokens.fontBody}`
-    g.fillText(`${detail} · ${theme.texts.appTitle}`, canvas.width / 2, canvas.height - bannerH * 0.18)
+    g.fillText(`${detail} · ${birthday ? `Cumpleaños de ${birthday}` : theme.texts.appTitle}`, canvas.width / 2, canvas.height - bannerH * 0.18)
     setShot(canvas.toDataURL('image/png'))
   }
 

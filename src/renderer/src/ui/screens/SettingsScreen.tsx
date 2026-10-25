@@ -28,6 +28,21 @@ export function SettingsScreen({ navigate }: { navigate: Navigate }): JSX.Elemen
       }
     >
       <div className="two-col">
+        <Panel title="🎂 Cumpleañera">
+          <Field label="Nombre" hint="Aparece en el inicio, el podio, los certificados y las fotos.">
+            <input value={s.birthdayName} maxLength={30} placeholder="p. ej. Sofi" onChange={(e) => set({ birthdayName: e.target.value })} />
+          </Field>
+          <Field label="Años que cumple (opcional)">
+            <input
+              type="number"
+              min={1}
+              max={120}
+              value={s.birthdayAge ?? ''}
+              onChange={(e) => set({ birthdayAge: e.target.value ? Number(e.target.value) : undefined })}
+            />
+          </Field>
+        </Panel>
+
         <Panel title="Turnos">
           <Field label="Cuenta regresiva">
             <Slider value={s.countdownSeconds} min={1} max={5} onChange={(v) => set({ countdownSeconds: v })} format={(v) => `${v} s`} />

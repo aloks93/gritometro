@@ -14,6 +14,7 @@ import { ModesScreen } from './ui/screens/ModesScreen'
 import { PlayersScreen } from './ui/screens/PlayersScreen'
 import { RecordsScreen } from './ui/screens/RecordsScreen'
 import { SettingsScreen } from './ui/screens/SettingsScreen'
+import { StudioShell } from './ui/studio/StudioShell'
 
 /** Publishes theme tokens as CSS variables: --c-<token>, --font-display, --font-body, --radius */
 function useThemeVars(theme: Theme): void {
@@ -54,7 +55,7 @@ function useAudioBoot(audio: AudioSettings): void {
 }
 
 function Shell(): JSX.Element {
-  const { data, theme } = useStore()
+  const { data, theme, update } = useStore()
   const [route, setRoute] = useState<Route>({ name: 'home' })
   useThemeVars(theme)
   useAudioBoot(data.audio)
@@ -65,14 +66,22 @@ function Shell(): JSX.Element {
         e.preventDefault()
         api()?.window.toggleFullscreen()
       }
+      // Hidden switch to the professional studio interface
+      if (e.ctrlKey && e.shiftKey && e.code === 'KeyS') {
+        e.preventDefault()
+        update('settings', (s) => ({ ...s, appMode: s.appMode === 'studio' ? 'party' : 'studio' }))
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [update])
 
+  const { birthdayName } = data.settings
   useEffect(() => {
-    document.title = theme.texts.appTitle
-  }, [theme.texts.appTitle])
+    document.title = birthdayName ? `${theme.texts.appTitle} · ${birthdayName}` : theme.texts.appTitle
+  }, [theme.texts.appTitle, birthdayName])
+
+  if (data.settings.appMode === 'studio') return <StudioShell />
 
   const navigate = setRoute
   let screen: JSX.Element
