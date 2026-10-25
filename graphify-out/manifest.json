@@ -312,10 +312,10 @@
     "semantic_hash": "763b1fe9298c8f69eefa22a612378171"
   },
   "src/renderer/src/core/studio/studio.ts": {
-    "mtime": 1792909263.2017922,
-    "seen": 1792910153.6979597,
-    "ast_hash": "307bda954db79a34d21fbcb8941a6306",
-    "semantic_hash": "307bda954db79a34d21fbcb8941a6306"
+    "mtime": 1792912091.8439398,
+    "seen": 1792912631.0685766,
+    "ast_hash": "9062cce41c84160d671f3900493dc238",
+    "semantic_hash": "9062cce41c84160d671f3900493dc238"
   },
   "src/renderer/src/ui/studio/CompareView.tsx": {
     "mtime": 1792898028.9132955,
@@ -330,10 +330,10 @@
     "semantic_hash": "18248d8a7d915127506376f5ac6558fc"
   },
   "src/renderer/src/ui/studio/StudioShell.tsx": {
-    "mtime": 1792909244.0588484,
-    "seen": 1792910153.6979597,
-    "ast_hash": "4e7ef6a2eead477643fc1614384e4efe",
-    "semantic_hash": "4e7ef6a2eead477643fc1614384e4efe"
+    "mtime": 1792912266.3632312,
+    "seen": 1792912631.0685766,
+    "ast_hash": "45619d33d7d76bbd2a450afe702b83ec",
+    "semantic_hash": "45619d33d7d76bbd2a450afe702b83ec"
   },
   "src/renderer/src/ui/studio/playback.ts": {
     "mtime": 1792893573.6854126,
@@ -516,10 +516,10 @@
     "semantic_hash": "5b47d4bf48f883f8135426107948a52f"
   },
   "src/renderer/src/ui/studio/LabView.tsx": {
-    "mtime": 1792909411.1494389,
-    "seen": 1792910153.6979597,
-    "ast_hash": "b21cc516c0092d55e3fc1f0ce232df26",
-    "semantic_hash": "b21cc516c0092d55e3fc1f0ce232df26"
+    "mtime": 1792912147.6524475,
+    "seen": 1792912631.0685766,
+    "ast_hash": "7c5a4dc213e1d27e117ff8df8dc765f4",
+    "semantic_hash": "7c5a4dc213e1d27e117ff8df8dc765f4"
   },
   "src/renderer/src/ui/studio/MixerView.tsx": {
     "mtime": 1792908784.1959567,
@@ -528,16 +528,16 @@
     "semantic_hash": "bae55782619ef1b6b78fd67faacd0060"
   },
   "src/renderer/src/ui/studio/RecorderView.tsx": {
-    "mtime": 1792893660.7223716,
-    "seen": 1792910153.6979597,
-    "ast_hash": "62747d08d2c67fefecb94e34eea4d25a",
-    "semantic_hash": "62747d08d2c67fefecb94e34eea4d25a"
+    "mtime": 1792912186.7828183,
+    "seen": 1792912631.0685766,
+    "ast_hash": "c57a1722ac7ff4b6f94f529ea94b24a7",
+    "semantic_hash": "c57a1722ac7ff4b6f94f529ea94b24a7"
   },
   "src/renderer/src/ui/studio/SlmView.tsx": {
-    "mtime": 1792893548.545997,
-    "seen": 1792910153.6979597,
-    "ast_hash": "c1ca15628e09f0f79573cd4e8474cb65",
-    "semantic_hash": "c1ca15628e09f0f79573cd4e8474cb65"
+    "mtime": 1792912147.6549475,
+    "seen": 1792912631.0685766,
+    "ast_hash": "fe01cb045259e4b0e9ff33db539d10d0",
+    "semantic_hash": "fe01cb045259e4b0e9ff33db539d10d0"
   },
   "src/renderer/src/ui/studio/UnlockScreen.tsx": {
     "mtime": 1792896518.0687225,
@@ -558,10 +558,10 @@
     "semantic_hash": "5494c6e27b1ba8ff222f3bc2c3e4da4d"
   },
   "src/renderer/src/ui/studio/spectrum.tsx": {
-    "mtime": 1792909263.4937568,
-    "seen": 1792910153.6979597,
-    "ast_hash": "1cfb61edba064ebcc607382755e6058b",
-    "semantic_hash": "1cfb61edba064ebcc607382755e6058b"
+    "mtime": 1792912147.6490116,
+    "seen": 1792912631.0685766,
+    "ast_hash": "479eb1692642ed92f84f14484e32b798",
+    "semantic_hash": "479eb1692642ed92f84f14484e32b798"
   },
   "src/renderer/src/ui/studio/widgets.tsx": {
     "mtime": 1792893378.473655,
@@ -624,10 +624,10 @@
     "semantic_hash": "4690ec2cc008122413d5c0b8987fa0df"
   },
   "CLAUDE.md": {
-    "mtime": 1792909871.331531,
-    "seen": 1792910153.6979597,
-    "ast_hash": "ec6eacf06fd0d2a4da15620f47b87b03",
-    "semantic_hash": "ec6eacf06fd0d2a4da15620f47b87b03"
+    "mtime": 1792912354.4070344,
+    "seen": 1792912631.0685766,
+    "ast_hash": "37f4449811da960166813b20dbf9eb67",
+    "semantic_hash": "37f4449811da960166813b20dbf9eb67"
   },
   "electron-builder.studio.yml": {
     "mtime": 1792896551.4863925,
@@ -646,5 +646,89 @@
     "seen": 1792910153.6979597,
     "ast_hash": "21c73267ab3b8c616ce9b3e23dcf3741",
     "semantic_hash": "21c73267ab3b8c616ce9b3e23dcf3741"
+  },
+  "src/renderer/src/core/studio/calibration.test.ts": {
+    "mtime": 1792910606.5988925,
+    "seen": 1792912631.0685766,
+    "ast_hash": "0c733abd933a77c77aa97728e4a7d3fb",
+    "semantic_hash": "0c733abd933a77c77aa97728e4a7d3fb"
+  },
+  "src/renderer/src/core/studio/calibration.ts": {
+    "mtime": 1792910425.206737,
+    "seen": 1792912631.0685766,
+    "ast_hash": "ab0b56d42aa7d27732b60cd44130dff5",
+    "semantic_hash": "ab0b56d42aa7d27732b60cd44130dff5"
+  },
+  "src/renderer/src/core/studio/flac.test.ts": {
+    "mtime": 1792910996.06348,
+    "seen": 1792912631.0685766,
+    "ast_hash": "f2a1b986c652d9e0abb8d47bc1b0b567",
+    "semantic_hash": "f2a1b986c652d9e0abb8d47bc1b0b567"
+  },
+  "src/renderer/src/core/studio/flac.ts": {
+    "mtime": 1792910945.7966387,
+    "seen": 1792912631.0685766,
+    "ast_hash": "19c1f06b70d079aff8991196bf30bac4",
+    "semantic_hash": "19c1f06b70d079aff8991196bf30bac4"
+  },
+  "src/renderer/src/core/studio/hardware.test.ts": {
+    "mtime": 1792912044.0621405,
+    "seen": 1792912631.0685766,
+    "ast_hash": "9b4b9763817fe57f619f15f8e9d3cd5e",
+    "semantic_hash": "9b4b9763817fe57f619f15f8e9d3cd5e"
+  },
+  "src/renderer/src/core/studio/hardware.ts": {
+    "mtime": 1792912043.8993819,
+    "seen": 1792912631.0685766,
+    "ast_hash": "d57cea2ad0de13a1bc2fedaa8eb4858e",
+    "semantic_hash": "d57cea2ad0de13a1bc2fedaa8eb4858e"
+  },
+  "src/renderer/src/core/studio/health.test.ts": {
+    "mtime": 1792911764.5227156,
+    "seen": 1792912631.0685766,
+    "ast_hash": "ee37a02ca840f621ebf0731af72b3673",
+    "semantic_hash": "ee37a02ca840f621ebf0731af72b3673"
+  },
+  "src/renderer/src/core/studio/health.ts": {
+    "mtime": 1792911764.3192143,
+    "seen": 1792912631.0685766,
+    "ast_hash": "1251a443136ec535221bb8686d35fe75",
+    "semantic_hash": "1251a443136ec535221bb8686d35fe75"
+  },
+  "src/renderer/src/core/studio/session.test.ts": {
+    "mtime": 1792911168.899836,
+    "seen": 1792912631.0685766,
+    "ast_hash": "08b1ee58990725258ce0cffaab0325ea",
+    "semantic_hash": "08b1ee58990725258ce0cffaab0325ea"
+  },
+  "src/renderer/src/core/studio/session.ts": {
+    "mtime": 1792911053.206479,
+    "seen": 1792912631.0685766,
+    "ast_hash": "41bc17945e8308176c6b9e6ec39fd742",
+    "semantic_hash": "41bc17945e8308176c6b9e6ec39fd742"
+  },
+  "src/renderer/src/ui/studio/CalibrationView.tsx": {
+    "mtime": 1792910679.1175547,
+    "seen": 1792912631.0685766,
+    "ast_hash": "850baf100b471f7ae576750986f743e5",
+    "semantic_hash": "850baf100b471f7ae576750986f743e5"
+  },
+  "src/renderer/src/ui/studio/DevicesView.tsx": {
+    "mtime": 1792912092.139961,
+    "seen": 1792912631.0685766,
+    "ast_hash": "4073bae7eac635a61bcc5612ea083136",
+    "semantic_hash": "4073bae7eac635a61bcc5612ea083136"
+  },
+  "src/renderer/src/ui/studio/exports.ts": {
+    "mtime": 1792912091.9803796,
+    "seen": 1792912631.0685766,
+    "ast_hash": "1c6daae1577beb4978867b9c6e1a4df9",
+    "semantic_hash": "1c6daae1577beb4978867b9c6e1a4df9"
+  },
+  "src/renderer/src/ui/studio/health.tsx": {
+    "mtime": 1792911787.061831,
+    "seen": 1792912631.0685766,
+    "ast_hash": "67a73c06caf876f2e507eef0889ea95f",
+    "semantic_hash": "67a73c06caf876f2e507eef0889ea95f"
   }
 }

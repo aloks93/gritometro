@@ -1,69 +1,97 @@
 # Graph Report - Gritometro  (2026-10-25)
 
 ## Corpus Check
-- 108 files · ~72,195 words
+- 122 files · ~87,023 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 5 file(s) not represented in the graph (top: .css 4, (none) 1)
 
 ## Summary
-- 904 nodes · 2492 edges · 31 communities (24 shown, 7 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 36 edges (avg confidence: 0.86)
-- Token cost: 74,657 input · 0 output
+- 1071 nodes · 2851 edges · 60 communities (52 shown, 8 thin omitted)
+- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 43 edges (avg confidence: 0.84)
+- Token cost: 54,291 input · 0 output
 
 ## Community Hubs (Navigation)
-- Studio Take Analysis
-- App Shell & Audio Config
-- Studio UI Meters & Loudness
-- Themes & Preload API
-- DSP Filters & Generators
+- Audio Config & Profiles
 - Game Modes
+- Mixer Engine Graph
+- System Health & Generators
 - Mixer Model & Tests
-- Project Docs & Skills
+- Mic Comparator
+- Party Screens & Scoring UI
 - Mixer UI Controls
 - Lab: RT60, THD, Stereo
-- Mixer Engine Graph
-- Mixer Engine Runtime
-- Audio Engine Output
-- Package Metadata
-- TypeScript Config
 - Level Analysis & Calibration
+- Calibration Workflow
+- Measurement Session
+- Themes
+- Take Analysis
+- Filters & True Peak
+- Custom Themes & Persistence
+- FLAC Encoder
+- Package Metadata
+- Players & Teams
+- Mixer Gain & EQ Math
+- Monitor View
+- App Navigation & Layout
+- TypeScript Config
+- Game Settings
+- Comparison Report
+- Weighting Filter Tests
+- App Shell
+- Score Tuning Docs
 - Electron Main & Storage
+- Studio Meter Hooks
 - Dev Dependencies
-- Audio Engine Types
-- Scream Scoring
+- Generator & Latency
+- Studio Data & Prefs
+- Spectrum & PNG Export
+- MIDI & Presets
+- Studio Mode Docs
+- Feedback Detector
+- Audio Setup Docs
+- Architecture Docs: App & Themes
+- Party Sounds
+- Architecture Docs: Audio & Studio
+- Architecture Docs: Editions
 - NPM Scripts
-- PCM Tap & Capture
+- Sound Level Meter
+- Project Overview Docs
+- Architecture Docs: Game Core
 - Build Config
 - Runtime Dependencies
+- Packaging Docs
+- Theme Docs
+- Architecture Docs: Studio DSP
+- Preload API
 - Bus Tap Worklet
-- Sustain Watcher
 - Strip Gate Worklet
 - Build Script Allowlist
 - Studio Build Script
 - PCM Tap Worklet
+- Core Purity & Tests
+- Main/Preload Docs
 
 ## God Nodes (most connected - your core abstractions)
-1. `useStore()` - 50 edges
-2. `audioEngine` - 44 edges
-3. `CompareView()` - 36 edges
-4. `react` - 33 edges
-5. `mixerEngine` - 30 edges
+1. `useStore()` - 49 edges
+2. `audioEngine` - 46 edges
+3. `react` - 36 edges
+4. `CompareView()` - 35 edges
+5. `mixerEngine` - 31 edges
 6. `GameScreen()` - 28 edges
-7. `RecorderView()` - 28 edges
-8. `MixerView()` - 27 edges
-9. `MonitorView()` - 23 edges
-10. `useEngineState()` - 21 edges
+7. `MixerView()` - 26 edges
+8. `MonitorView()` - 22 edges
+9. `Shell()` - 18 edges
+10. `useEngineState()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `<userData>/data/*.json persisted data` --shares_data_with--> `Persistence pipeline (store -> storage -> IPC -> data/<key>.json)`  [INFERRED]
-  .claude/skills/checklist-fiesta/SKILL.md → CLAUDE.md
-- `Simple vs advanced audio mode (effectiveProfile)` --conceptually_related_to--> `Mic owned only by audioEngine singleton`  [INFERRED]
-  .claude/skills/configurar-audio/SKILL.md → CLAUDE.md
-- `electron-builder.yml (party packaging)` --implements--> `Portable Windows .exe`  [INFERRED]
-  electron-builder.yml → .claude/skills/empaquetar/SKILL.md
 - `Skill: modo-estudio` --references--> `electron-builder.studio.yml (Gritometro Studio packaging)`  [INFERRED]
   .claude/skills/modo-estudio/SKILL.md → electron-builder.studio.yml
-- `core/ must stay framework-free` --rationale_for--> `technicalScore weights (SNR 55, level 15, clipping 15, tonal 15)`  [INFERRED]
+- `technicalScore weights (SNR 55, level 15, clipping 15, tonal 15)` --semantically_similar_to--> `Scream score formula (0.7 sustained peak + 0.3 average)`  [INFERRED] [semantically similar]
+  .claude/skills/modo-estudio/SKILL.md → .claude/skills/ajustar-puntaje/SKILL.md
+- `electron-builder.yml (party packaging)` --implements--> `Portable Windows .exe`  [INFERRED]
+  electron-builder.yml → .claude/skills/empaquetar/SKILL.md
+- `PCM tap AudioWorklet (pcmTap.worklet.js)` --rationale_for--> `Renderer Content-Security-Policy`  [INFERRED]
+  .claude/skills/modo-estudio/SKILL.md → src/renderer/index.html
+- `Hidden Studio Mode` --conceptually_related_to--> `Hidden studio activation (Ctrl+Shift+S / 5 clicks)`  [EXTRACTED]
   CLAUDE.md → .claude/skills/modo-estudio/SKILL.md
 
 ## Import Cycles
@@ -71,126 +99,240 @@
 
 ## Hyperedges (group relationships)
 - **Party preparation workflow (package, audio setup, score tuning)** — _claude_skills_checklist_fiesta_skill, _claude_skills_empaquetar_skill, _claude_skills_configurar_audio_skill, _claude_skills_ajustar_puntaje_skill [EXTRACTED 1.00]
-- **Two editions from one codebase (party + studio)** — claude_party_edition, claude_studio_edition, electron_builder, electron_builder_studio, _claude_skills_modo_estudio_skill_studio_release [EXTRACTED 1.00]
 - **Scream scoring inputs** — _claude_skills_ajustar_puntaje_skill_scream_score_formula, _claude_skills_ajustar_puntaje_skill_sustained_peak_anti_cheat, _claude_skills_ajustar_puntaje_skill_age_handicap, _claude_skills_ajustar_puntaje_skill_difficulty_rangedb, _claude_skills_ajustar_puntaje_skill_noise_floor_calibration [EXTRACTED 1.00]
+- **Persistence flow (store → storage → IPC → main)** — claude_store, src_renderer_src_ui_storage, claude_preload_api, claude_main_process, claude_savedebounced [EXTRACTED 1.00]
+- **Audio capture and analysis pipeline** — claude_audioengine, claude_microphoneservice, claude_levelanalyzer, claude_audio_worklets, claude_mixerengine, claude_scoreengine [INFERRED 0.85]
+- **Party vs Studio edition build system** — claude_party_edition, claude_studio_edition, claude_edition_define, electron_vite_config, claude_electron_builder_studio, claude_studio_unlock [EXTRACTED 1.00]
 
-## Communities (31 total, 7 thin omitted)
+## Communities (60 total, 8 thin omitted)
 
-### Community 0 - "Studio Take Analysis"
-Cohesion: 0.05
-Nodes (84): aWeightingDb(), aWeightingOffset(), BAND_CENTERS, bandCurve(), bandShares(), binHz(), clamp(), curveDifference() (+76 more)
-
-### Community 1 - "App Shell & Audio Config"
+### Community 0 - "Audio Config & Profiles"
 Cohesion: 0.06
-Nodes (71): App(), Shell(), useAudioBoot(), useThemeVars(), activeProfile(), AudioProfile, AudioSettings, createProfile() (+63 more)
+Nodes (35): AudioProfile, createProfile(), defaultAudioSettings(), isVirtualDevice(), LatencyHint, VIRTUAL_PATTERNS, audioEngine, createTap() (+27 more)
 
-### Community 2 - "Studio UI Meters & Loudness"
+### Community 1 - "Game Modes"
 Cohesion: 0.08
-Nodes (64): react, MIN_DB, noteName(), LoudnessReading, round1(), SlmReading, SoundLevelMeter, detectPitch() (+56 more)
+Nodes (35): AnyGameMode, ConfigField, fmtPoints(), fmtSeconds(), GameContext, GameMode, ModeView, playerName() (+27 more)
 
-### Community 3 - "Themes & Preload API"
-Cohesion: 0.05
-Nodes (60): api, GritometroApi, arcoirisTheme, clasicoTheme, DoorReveal(), DOORS, FactoryBackground(), fabricaMonstruosTheme (+52 more)
-
-### Community 4 - "DSP Filters & Generators"
+### Community 2 - "Mixer Engine Graph"
 Cohesion: 0.06
-Nodes (43): joinChunks(), eqSections(), ampToDb(), aWeighting(), Biquad, clickBurst(), cWeighting(), digitalPole() (+35 more)
+Nodes (29): analyser(), BusLevel, BusNodes, chain(), ChannelLevel, describe(), join(), mixerEngine (+21 more)
 
-### Community 5 - "Game Modes"
-Cohesion: 0.08
-Nodes (35): AnyGameMode, ConfigField, fmtPoints(), fmtSeconds(), GameContext, GameMode, playerName(), Standing (+27 more)
+### Community 3 - "System Health & Generators"
+Cohesion: 0.07
+Nodes (37): logSweep(), pinkNoise(), whiteNoise(), alarmsOf(), deviceChanges(), evaluateHealth(), fmt(), HealthGroup (+29 more)
 
-### Community 6 - "Mixer Model & Tests"
-Cohesion: 0.08
-Nodes (49): vitest, applyMidi(), applyPreset(), applyProcessing(), BusKind, createStrip(), defaultBuses(), defaultEqBands() (+41 more)
+### Community 4 - "Mixer Model & Tests"
+Cohesion: 0.07
+Nodes (36): applyProcessing(), BusKind, defaultBuses(), defaultMixer(), Duck, EqBand, EqBandType, FADER_MAX (+28 more)
 
-### Community 7 - "Project Docs & Skills"
-Cohesion: 0.06
-Nodes (40): Skill: ajustar-puntaje, Age bonus multiplier, Difficulty (rangeDb), Noise floor calibration (noiseFloorDb), Skill: checklist-fiesta, Suggested challenge order (Ranking, Torneo, Tanque, Silencio), <userData>/data/*.json persisted data, Skill: configurar-audio (+32 more)
+### Community 5 - "Mic Comparator"
+Cohesion: 0.12
+Nodes (34): matchGain(), pcmRms(), mergeCandidates(), parseSession(), serializeSession(), saveHtmlAsPdf(), toBase64(), COLORS (+26 more)
 
-### Community 8 - "Mixer UI Controls"
-Cohesion: 0.08
-Nodes (35): autoTrim(), describeMidiKey(), EqBand, FADER_MIN, faderToPos(), MAX_STRIPS, MidiTargetKind, Monitor (+27 more)
+### Community 6 - "Party Screens & Scoring UI"
+Cohesion: 0.17
+Nodes (24): react, effectiveProfile(), normalizeLevel(), ScoreResult, Turn, levelLabel(), Certificate(), Meter() (+16 more)
 
-### Community 9 - "Lab: RT60, THD, Stereo"
-Cohesion: 0.13
-Nodes (32): decay(), spectrum(), energyEnvelope(), fitSlope(), measureRt60(), Rt60Result, rt60Verdict(), blackmanHarris() (+24 more)
+### Community 7 - "Mixer UI Controls"
+Cohesion: 0.12
+Nodes (31): applyPreset(), autoTrim(), createStrip(), defaultEqBands(), describeMidiKey(), faderToPos(), posToFader(), serializeMixer() (+23 more)
 
-### Community 10 - "Mixer Engine Graph"
-Cohesion: 0.08
-Nodes (27): analyser(), BusLevel, BusNodes, chain(), ChannelLevel, join(), MixerState, MixerStatus (+19 more)
+### Community 8 - "Lab: RT60, THD, Stereo"
+Cohesion: 0.14
+Nodes (28): energyEnvelope(), fitSlope(), measureRt60(), Rt60Result, rt60Verdict(), blackmanHarris(), DistortionResult, distortionVerdict() (+20 more)
 
-### Community 11 - "Mixer Engine Runtime"
+### Community 9 - "Level Analysis & Calibration"
 Cohesion: 0.11
-Nodes (7): describe(), mixerEngine, openSource(), structureKey(), toDb(), duckStep(), MixerConfig
+Nodes (19): Ballistics, noiseFloorFrom(), analyzeFrame(), BALLISTICS, CLIP_THRESHOLD, LevelReading, MIN_DB, peak() (+11 more)
 
-### Community 12 - "Audio Engine Output"
+### Community 10 - "Calibration Workflow"
 Cohesion: 0.15
-Nodes (3): audioEngine, describeError(), ExternalSource
+Nodes (27): CalibrationMethod, CalibrationRecord, calibrationWarnings(), checkCalibratorSignal(), GainAdvice, LoopbackPoint, LoopbackResult, pushCalibration() (+19 more)
 
-### Community 13 - "Package Metadata"
+### Community 11 - "Measurement Session"
+Cohesion: 0.17
+Nodes (28): buildSession(), buildSessionReportHtml(), clipMarkers(), f1(), Marker, markersCsv(), parseMeasurementSession(), serializeMeasurementSession() (+20 more)
+
+### Community 12 - "Themes"
+Cohesion: 0.11
+Nodes (22): arcoirisTheme, clasicoTheme, DoorReveal(), DOORS, FactoryBackground(), fabricaMonstruosTheme, BUBBLES, ScreamTank() (+14 more)
+
+### Community 13 - "Take Analysis"
+Cohesion: 0.19
+Nodes (24): aWeightingDb(), aWeightingOffset(), BAND_CENTERS, bandCurve(), bandShares(), binHz(), curveDifference(), dbToPower() (+16 more)
+
+### Community 14 - "Filters & True Peak"
+Cohesion: 0.12
+Nodes (14): FilterChain, kWeighting(), POLYPHASE, TruePeakMeter, calibrationOffset(), gatedLoudness(), LoudnessMeter, loudnessRange() (+6 more)
+
+### Community 15 - "Custom Themes & Persistence"
+Cohesion: 0.17
+Nodes (22): saveDebounced (per-key debounced save), customFromBuiltIn(), getBuiltIn(), isCustomTheme(), resolveTheme(), CustomizeScreen(), MediaField(), TEXT_FIELDS (+14 more)
+
+### Community 16 - "FLAC Encoder"
+Cohesion: 0.19
+Nodes (14): BitWriter, CRC16, CRC8, encodeFlac(), FlacBits, planRice(), quantize(), residuals() (+6 more)
+
+### Community 17 - "Package Metadata"
 Cohesion: 0.11
 Nodes (17): author, description, main, name, private, version, canvas-confetti, electron-builder (+9 more)
 
-### Community 14 - "TypeScript Config"
+### Community 18 - "Players & Teams"
+Cohesion: 0.22
+Nodes (16): ctxOf(), autoTeams(), AvatarSpec, createPlayer(), handicapFor(), newId(), Player, randomAvatar() (+8 more)
+
+### Community 19 - "Mixer Gain & EQ Math"
+Cohesion: 0.21
+Nodes (17): dbToGain(), eqResponse(), eqSections(), isAudible(), logFreqs(), panGains(), stripOutputGain(), Biquad (+9 more)
+
+### Community 20 - "Monitor View"
+Cohesion: 0.26
+Nodes (16): activeProfile(), noteName(), noteInfo, LoudnessPanel(), LUFS_PRESETS, MonitorControls(), MonitorView(), TunerPanel() (+8 more)
+
+### Community 21 - "App Navigation & Layout"
+Cohesion: 0.27
+Nodes (13): getMode(), Field(), Screen(), Slider(), useReading(), GameSession, Navigate, Route (+5 more)
+
+### Community 22 - "TypeScript Config"
 Cohesion: 0.11
 Nodes (17): compilerOptions, baseUrl, esModuleInterop, isolatedModules, jsx, lib, module, moduleResolution (+9 more)
 
-### Community 15 - "Level Analysis & Calibration"
-Cohesion: 0.22
-Nodes (10): Ballistics, noiseFloorFrom(), analyzeFrame(), BALLISTICS, CLIP_THRESHOLD, peak(), rms(), smooth() (+2 more)
+### Community 23 - "Game Settings"
+Cohesion: 0.19
+Nodes (15): AudioSettings, HandicapRule, AppMode, defaultGameSettings(), GameSettings, CustomTheme, load(), saveDebounced() (+7 more)
 
-### Community 16 - "Electron Main & Storage"
-Cohesion: 0.30
-Nodes (9): electron, setupIpc(), dataDir(), dataPath(), fileFor(), queues, readKey(), writeKey() (+1 more)
+### Community 24 - "Comparison Report"
+Cohesion: 0.19
+Nodes (13): clamp(), technicalScore(), buildReportHtml(), chartSvg(), escapeHtml(), fmt(), REPORT_COLORS, ReportOptions (+5 more)
 
-### Community 17 - "Dev Dependencies"
+### Community 25 - "Weighting Filter Tests"
+Cohesion: 0.20
+Nodes (10): aWeighting(), cWeighting(), digitalPole(), normalizeAt1k(), section(), detectPitch(), LETTERS, medianPitch() (+2 more)
+
+### Community 26 - "App Shell"
+Cohesion: 0.23
+Nodes (8): App(), Shell(), useAudioBoot(), useThemeVars(), AppBackground(), Props, ScreenErrorBoundary, UnlockScreen()
+
+### Community 27 - "Score Tuning Docs"
+Cohesion: 0.19
+Nodes (10): Skill: ajustar-puntaje, Age bonus multiplier, Noise floor calibration (noiseFloorDb), Skill: checklist-fiesta, Suggested challenge order (Ranking, Torneo, Tanque, Silencio), <userData>/data/*.json persisted data, Skill: nuevo-modo, createAttemptsMode factory (+2 more)
+
+### Community 28 - "Electron Main & Storage"
+Cohesion: 0.32
+Nodes (8): setupIpc(), dataDir(), dataPath(), fileFor(), queues, readKey(), writeKey(), writeNow()
+
+### Community 29 - "Studio Meter Hooks"
+Cohesion: 0.26
+Nodes (11): TimeWeighting, Weighting, SlmSample, useLoudness(), usePcmMeter(), usePitch(), useSoundLevel(), HistoryChart() (+3 more)
+
+### Community 30 - "Dev Dependencies"
 Cohesion: 0.17
 Nodes (12): devDependencies, electron, electron-builder, electron-vite, @types/canvas-confetti, @types/node, @types/react, @types/react-dom (+4 more)
 
-### Community 18 - "Audio Engine Types"
-Cohesion: 0.20
-Nodes (9): EngineState, EngineStatus, PcmListener, PcmTap, ReadingListener, SinkContext, StateListener, workletLoaded (+1 more)
+### Community 31 - "Generator & Latency"
+Cohesion: 0.30
+Nodes (11): joinChunks(), clickBurst(), findDelay(), summarizeLatency(), GeneratorView(), LatencyPanel(), PRESETS, toHz() (+3 more)
 
-### Community 19 - "Scream Scoring"
+### Community 32 - "Studio Data & Prefs"
+Cohesion: 0.24
+Nodes (11): TakeMetrics, WavFormat, ToleranceClass, defaultSessionMeta(), SessionMeta, defaultStudio(), defaultStudioPrefs(), mergeStudio() (+3 more)
+
+### Community 33 - "Spectrum & PNG Export"
 Cohesion: 0.27
-Nodes (6): above(), DEFAULT_SCORE_OPTIONS, ScoreOptions, scoreScream(), SilenceWatcher, sustainedPeak()
+Nodes (10): SpectrumMode, saveCanvasPng(), fmtHz(), fOfX(), FREQ_LABELS, fx(), heat(), Props (+2 more)
 
-### Community 20 - "NPM Scripts"
+### Community 34 - "MIDI & Presets"
+Cohesion: 0.27
+Nodes (10): applyMidi(), learnMidi(), midiKey(), parseMidi(), STRIP_PRESETS, decay(), spectrum(), rng() (+2 more)
+
+### Community 35 - "Studio Mode Docs"
+Cohesion: 0.22
+Nodes (8): Skill: modo-estudio, EBU R128 loudness (LoudnessMeter), Round-trip latency test (findDelay), Mic comparison flow (takes, A/B sync, blind test), Separate studio release (studio-vX.Y.Z, --latest=false), technicalScore weights (SNR 55, level 15, clipping 15, tonal 15), Renderer index.html, Renderer Content-Security-Policy
+
+### Community 36 - "Feedback Detector"
+Cohesion: 0.22
+Nodes (6): DEFAULT_FEEDBACK_OPTIONS, FeedbackCandidate, FeedbackDetector, FeedbackOptions, round1(), Track
+
+### Community 37 - "Audio Setup Docs"
+Cohesion: 0.22
+Nodes (8): Difficulty (rangeDb), Skill: configurar-audio, Quick audio diagnostics table, dB SPL calibration offset, USB console / multichannel interface, VoiceMeeter Banana routing, SoundLevelMeter (A/C/Z, Leq, 94/114 dB calibrator), Virtual mixer console (strips, A/B buses, scenes)
+
+### Community 38 - "Architecture Docs: App & Themes"
+Cohesion: 0.22
+Nodes (8): App.tsx (router, theme vars, audio boot), AudioConfig (profiles, simple/advanced), CustomTheme / resolveTheme, effectiveProfile(), Fábrica de Monstruos theme, Generic Meter fallback (ui/components/Meter.tsx), /configurar-audio skill, /nuevo-tema skill
+
+### Community 39 - "Party Sounds"
+Cohesion: 0.31
+Nodes (8): SoundStyle, ac(), makeSounds(), playUrl(), Sounds, synth, tone(), useSounds()
+
+### Community 40 - "Architecture Docs: Audio & Studio"
+Cohesion: 0.32
+Nodes (8): Audio worklets (pcmTap, stripGate, busTap), AudioEngine (singleton), Mic Comparator (A/B, blind test), MicrophoneService, core/mixer pure mixer model, MixerEngine, Studio tabs (Monitor, Sonómetro, Grabadora, Mezclador, Comparador, Generador), StudioShell
+
+### Community 41 - "Architecture Docs: Editions"
+Cohesion: 0.25
+Nodes (8): AudioScreen studio prop, __EDITION__ define, electron-builder.studio.yml, Game settings + defaults (appMode, birthdayName), /empaquetar skill, ui/store.tsx (persisted app state), Studio Edition (Gritómetro Studio), Studio Access Code (core/studio/unlock.ts)
+
+### Community 42 - "NPM Scripts"
 Cohesion: 0.25
 Nodes (8): scripts, build, build:studio, build:win, dev, preview, test, typecheck
 
-### Community 22 - "Build Config"
-Cohesion: 0.33
-Nodes (3): define, electron-vite, @vitejs/plugin-react
+### Community 43 - "Sound Level Meter"
+Cohesion: 0.32
+Nodes (3): ampToDb(), round1(), SoundLevelMeter
 
-### Community 23 - "Runtime Dependencies"
+### Community 44 - "Project Overview Docs"
+Cohesion: 0.29
+Nodes (5): Gritómetro, Party Edition, /checklist-fiesta skill, /modo-estudio skill, Hidden Studio Mode
+
+### Community 45 - "Architecture Docs: Game Core"
+Cohesion: 0.29
+Nodes (6): Game mode registry, LevelAnalyzer, Players, teams, avatars, age handicap, ScoreEngine + SilenceWatcher, /ajustar-puntaje skill, /nuevo-modo skill
+
+### Community 46 - "Build Config"
+Cohesion: 0.29
+Nodes (4): define, electron-vite, @vitejs/plugin-react, vitest
+
+### Community 47 - "Runtime Dependencies"
 Cohesion: 0.33
 Nodes (6): dependencies, canvas-confetti, @fontsource/luckiest-guy, @fontsource/nunito, react, react-dom
 
-### Community 27 - "Build Script Allowlist"
+### Community 48 - "Packaging Docs"
+Cohesion: 0.50
+Nodes (5): Skill: empaquetar, Portable Windows .exe, Unsigned exe / SmartScreen warning, electron-builder.yml (party packaging), electron-builder.studio.yml (Gritometro Studio packaging)
+
+### Community 50 - "Architecture Docs: Studio DSP"
+Cohesion: 0.40
+Nodes (5): Calibration (noise floor), EBU R128 LoudnessMeter, IEC SoundLevelMeter (A/C/Z weighting), core/studio DSP (analysis, dsp, loudness, pitch, report), YIN pitch detection
+
+### Community 51 - "Preload API"
+Cohesion: 0.40
+Nodes (4): electron, api, GritometroApi, Window
+
+### Community 54 - "Build Script Allowlist"
 Cohesion: 0.50
 Nodes (4): allowScripts, electron@36.9.5, electron-winstaller@5.4.0, esbuild@0.25.12
 
 ## Knowledge Gaps
-- **15 isolated node(s):** `@types/canvas-confetti`, `@types/node`, `@types/react`, `@types/react-dom`, `electron-builder` (+10 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 250 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **7 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **40 isolated node(s):** `electron-builder`, `@types/canvas-confetti`, `@types/node`, `@types/react`, `@types/react-dom` (+35 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 301 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **8 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `react` connect `Studio UI Meters & Loudness` to `Studio Take Analysis`, `App Shell & Audio Config`, `Themes & Preload API`, `DSP Filters & Generators`, `Mixer UI Controls`, `Lab: RT60, THD, Stereo`, `Package Metadata`?**
-  _High betweenness centrality (0.117) - this node is a cross-community bridge._
-- **What connects `@types/canvas-confetti`, `@types/node`, `@types/react` to the rest of the system?**
-  _15 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Studio Take Analysis` be split into smaller, more focused modules?**
-  _Cohesion score 0.05049442457395329 - nodes in this community are weakly interconnected._
-- **Why does `vitest` connect `Mixer Model & Tests` to `Studio Take Analysis`, `DSP Filters & Generators`, `Game Modes`, `Lab: RT60, THD, Stereo`, `Package Metadata`, `Level Analysis & Calibration`, `Build Config`?**
-  _High betweenness centrality (0.062) - this node is a cross-community bridge._
-- **Should `App Shell & Audio Config` be split into smaller, more focused modules?**
-  _Cohesion score 0.05925417524593914 - nodes in this community are weakly interconnected._
-- **Why does `audioEngine` connect `Audio Engine Output` to `Studio Take Analysis`, `App Shell & Audio Config`, `Studio UI Meters & Loudness`, `DSP Filters & Generators`, `Lab: RT60, THD, Stereo`, `Audio Engine Types`, `PCM Tap & Capture`?**
-  _High betweenness centrality (0.055) - this node is a cross-community bridge._
-- **Should `Studio UI Meters & Loudness` be split into smaller, more focused modules?**
-  _Cohesion score 0.07825507825507826 - nodes in this community are weakly interconnected._
+- **Why does `react` connect `Party Screens & Scoring UI` to `Audio Config & Profiles`, `System Health & Generators`, `Mic Comparator`, `Mixer UI Controls`, `Lab: RT60, THD, Stereo`, `Calibration Workflow`, `Measurement Session`, `Themes`, `Custom Themes & Persistence`, `Package Metadata`, `Players & Teams`, `Monitor View`, `App Navigation & Layout`, `Game Settings`, `App Shell`, `Studio Meter Hooks`, `Generator & Latency`, `Spectrum & PNG Export`, `Party Sounds`?**
+  _High betweenness centrality (0.098) - this node is a cross-community bridge._
+- **What connects `electron-builder`, `@types/canvas-confetti`, `@types/node` to the rest of the system?**
+  _40 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Audio Config & Profiles` be split into smaller, more focused modules?**
+  _Cohesion score 0.05711849957374254 - nodes in this community are weakly interconnected._
+- **Why does `vitest` connect `Build Config` to `Audio Config & Profiles`, `Game Modes`, `MIDI & Presets`, `System Health & Generators`, `Mixer Model & Tests`, `Lab: RT60, THD, Stereo`, `Level Analysis & Calibration`, `Calibration Workflow`, `Measurement Session`, `Take Analysis`, `FLAC Encoder`, `Package Metadata`, `Mixer Gain & EQ Math`, `Comparison Report`, `Weighting Filter Tests`?**
+  _High betweenness centrality (0.073) - this node is a cross-community bridge._
+- **Should `Game Modes` be split into smaller, more focused modules?**
+  _Cohesion score 0.07627118644067797 - nodes in this community are weakly interconnected._
+- **Why does `AudioEngine (singleton)` connect `Architecture Docs: Audio & Studio` to `Architecture Docs: Game Core`, `Architecture Docs: App & Themes`, `Party Screens & Scoring UI`?**
+  _High betweenness centrality (0.072) - this node is a cross-community bridge._
+- **Should `Mixer Engine Graph` be split into smaller, more focused modules?**
+  _Cohesion score 0.06038961038961039 - nodes in this community are weakly interconnected._
