@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { activeProfile } from '../../core/audio/AudioConfig'
-import { audioEngine } from '../../core/audio/AudioEngine'
-import { calibrationOffset, SoundLevelMeter, type TimeWeighting, type Weighting } from '../../core/studio/loudness'
+import { calibrationWarnings } from '../../core/studio/calibration'
+import { type TimeWeighting, type Weighting } from '../../core/studio/loudness'
 import { saveFile } from '../storage'
 import { useEngineState } from '../hooks'
 import { useStore } from '../store'
@@ -10,41 +10,23 @@ import { useStudioPrefs } from './MonitorView'
 import { fitCanvas, fmtTime, Readout, Segmented } from './widgets'
 
 const HISTORY_S = 120
-const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 /** Sound level meter (sonómetro): A/C/Z, Fast/Slow, Leq, Lmax/Lmin, LCpeak, history and calibration */
 export function SlmView(): JSX.Element {
-  const { data, update } = useStore()
+  const { data } = useStore()
   const [prefs, setPrefs] = useStudioPrefs()
   const engine = useEngineState()
   const profile = activeProfile(data.audio)
   const w = prefs.slmWeighting
   const tw = prefs.slmTime
   const { reading, history, reset } = useSoundLevel(profile.splOffset, w, HISTORY_S)
-  const [calib, setCalib] = useState<{ ref: number; busy: boolean; msg: string }>({ ref: 94, busy: false, msg: '' })
   const [log, setLog] = useState<{ t: string; leq: number; max: number; peak: number }[]>([])
 
   const now = reading ? (tw === 'F' ? reading.fast[w] : reading.slow[w]) : null
   const label = `L${w}${tw}`
 
-  /** Measures a calibrator (94/114 dB at 1 kHz) for 3 s and stores the SPL offset in the profile */
-  const calibrate = async (): Promise<void> => {
-    setCalib((c) => ({ ...c, busy: true, msg: 'Midiendo calibrador… no muevas el micrófono' }))
-    const meter = new SoundLevelMeter(audioEngine.sampleRate, 0)
-    const off = audioEngine.onPcm((chunk) => meter.push(chunk))
-    await wait(500)
-    meter.reset()
-    await wait(3000)
-    off()
-    const measured = meter.reading().leq.Z
-    if (measured < -70) {
-      setCalib((c) => ({ ...c, busy: false, msg: 'Señal demasiado baja: ¿está el calibrador encendido y bien colocado?' }))
-      return
-    }
-    const offset = calibrationOffset(measured, calib.ref)
-    update('audio', (a) => ({ ...a, profiles: a.profiles.map((p) => (p.id === a.activeProfileId ? { ...p, splOffset: offset } : p)) }))
-    setCalib((c) => ({ ...c, busy: false, msg: `Calibrado: ${measured.toFixed(1)} dBFS = ${c.ref} dB SPL (offset ${offset} dB, guardado en «${profile.name}»).` }))
-  }
+  const calibration = data.studio.calibrations[profile.id]?.find((h) => h.method !== 'loopback')
+  const calWarnings = calibrationWarnings(calibration, { deviceLabel: engine.status === 'running' ? engine.label : undefined, gainDb: profile.gainDb, offsetDb: profile.splOffset })
 
   const snapshot = (): void => {
     if (!reading) return
@@ -93,35 +75,14 @@ export function SlmView(): JSX.Element {
         </p>
       </section>
 
-      <section className="st-panel">
-        <header className="st-panel-head">
-          <h2>Calibración con calibrador acústico</h2>
-        </header>
-        <div className="st-row">
-          <Segmented<number> value={calib.ref} onChange={(v) => setCalib((c) => ({ ...c, ref: v }))} options={[[94, '94 dB'], [114, '114 dB']]} />
-          <button className="st-btn primary" disabled={calib.busy || engine.status !== 'running'} onClick={calibrate}>
-            {calib.busy ? 'Midiendo…' : 'Calibrar (3 s)'}
-          </button>
-          <label className="st-inline">
-            o ajusta a mano
-            <input
-              type="number"
-              step={0.1}
-              value={profile.splOffset}
-              onChange={(e) => {
-                const v = Number(e.target.value)
-                if (Number.isFinite(v)) update('audio', (a) => ({ ...a, profiles: a.profiles.map((p) => (p.id === a.activeProfileId ? { ...p, splOffset: v } : p)) }))
-              }}
-            />
-            dB
-          </label>
-        </div>
-        {calib.msg && <p className="st-small">{calib.msg}</p>}
-        <p className="st-muted st-small">
-          Coloca el calibrador (1 kHz) en la cápsula, con la ganancia que vayas a usar, y pulsa Calibrar. Sin calibrador puedes igualar el valor con un sonómetro de referencia. El
-          procesamiento de Windows debe estar desactivado en el perfil.
-        </p>
-      </section>
+      {calWarnings.length > 0 && (
+        <ul className="st-warnings">
+          {calWarnings.map((w) => (
+            <li key={w}>⚠ {w}</li>
+          ))}
+          <li>Calibra o verifica en la pestaña Calibración (Ctrl+4).</li>
+        </ul>
+      )}
 
       <section className="st-panel">
         <header className="st-panel-head">

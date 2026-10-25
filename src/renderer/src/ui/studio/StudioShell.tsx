@@ -5,6 +5,7 @@ import { useEngineState } from '../hooks'
 import { AudioScreen } from '../screens/AudioScreen'
 import { api } from '../storage'
 import { useStore } from '../store'
+import { CalibrationView } from './CalibrationView'
 import { CompareView } from './CompareView'
 import { generator } from './generator'
 import { GeneratorView } from './GeneratorView'
@@ -16,12 +17,13 @@ import { RecorderView } from './RecorderView'
 import { SlmView } from './SlmView'
 import './studio.css'
 
-type Tab = 'monitor' | 'mixer' | 'slm' | 'recorder' | 'compare' | 'lab' | 'generator' | 'input'
+type Tab = 'monitor' | 'mixer' | 'slm' | 'calib' | 'recorder' | 'compare' | 'lab' | 'generator' | 'input'
 
 const TABS: [Tab, string][] = [
   ['monitor', 'Monitor'],
   ['mixer', 'Mezclador'],
   ['slm', 'Sonómetro'],
+  ['calib', 'Calibración'],
   ['recorder', 'Grabadora'],
   ['compare', 'Comparador'],
   ['lab', 'Laboratorio'],
@@ -33,7 +35,7 @@ const TABS: [Tab, string][] = [
 let lastTab: Tab = 'monitor'
 
 const SHORTCUTS: [string, string][] = [
-  ['Ctrl+1 … Ctrl+8', 'Cambiar de pestaña'],
+  ['Ctrl+1 … Ctrl+9', 'Cambiar de pestaña'],
   ['F11', 'Pantalla completa'],
   ['F · P', 'Monitor: fijar referencia · congelar analizador'],
   ['R · M', 'Grabadora: grabar/detener · marcador'],
@@ -109,7 +111,7 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement
       const typing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
-      if (e.ctrlKey && !e.shiftKey && /^Digit[1-8]$/.test(e.code)) {
+      if (e.ctrlKey && !e.shiftKey && /^Digit[1-9]$/.test(e.code)) {
         e.preventDefault()
         setTab(TABS[Number(e.code.slice(5)) - 1][0])
       } else if (!typing && e.key === '?') {
@@ -202,6 +204,7 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
         {tab === 'monitor' && <MonitorView />}
         {tab === 'mixer' && <MixerView />}
         {tab === 'slm' && <SlmView />}
+        {tab === 'calib' && <CalibrationView />}
         {tab === 'recorder' && <RecorderView />}
         {tab === 'compare' && <CompareView />}
         {tab === 'lab' && <LabView />}

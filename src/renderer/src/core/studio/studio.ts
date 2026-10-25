@@ -1,4 +1,5 @@
 import type { TakeMetrics, WavFormat } from './analysis'
+import type { CalibrationRecord, ToleranceClass } from './calibration'
 import type { TimeWeighting, Weighting } from './loudness'
 
 export interface MicCandidate {
@@ -49,6 +50,10 @@ export interface StudioData {
   /** Candidate the response chart subtracts (difference view); null = absolute curves */
   referenceId: string | null
   prefs: StudioPrefs
+  /** Calibration history per audio profile id, newest first */
+  calibrations: Record<string, CalibrationRecord[]>
+  /** IEC 61672 class used to judge calibration checks */
+  toleranceClass: ToleranceClass
 }
 
 export function defaultStudioPrefs(): StudioPrefs {
@@ -74,7 +79,9 @@ export function defaultStudio(): StudioData {
     matchLoudness: true,
     wavFormat: 24,
     referenceId: null,
-    prefs: defaultStudioPrefs()
+    prefs: defaultStudioPrefs(),
+    calibrations: {},
+    toleranceClass: 2
   }
 }
 
@@ -82,7 +89,14 @@ export function defaultStudio(): StudioData {
 export function mergeStudio(saved: Partial<StudioData> | null | undefined): StudioData {
   const d = defaultStudio()
   const s = saved ?? {}
-  return { ...d, ...s, candidates: Array.isArray(s.candidates) ? s.candidates : [], prefs: { ...d.prefs, ...(s.prefs ?? {}) } }
+  return {
+    ...d,
+    ...s,
+    candidates: Array.isArray(s.candidates) ? s.candidates : [],
+    prefs: { ...d.prefs, ...(s.prefs ?? {}) },
+    calibrations: s.calibrations && typeof s.calibrations === 'object' ? s.calibrations : {},
+    toleranceClass: s.toleranceClass === 1 ? 1 : 2
+  }
 }
 
 // ---- Session files: share or archive a comparison (metrics only, audio goes as WAV)

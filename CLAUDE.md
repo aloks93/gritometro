@@ -37,11 +37,12 @@ src/renderer/src/
                    encode+decode), dsp (A/C/K weighting biquads, true peak, generators, findDelay),
                    loudness (EBU R128 LoudnessMeter, IEC SoundLevelMeter), pitch (YIN), report (PDF HTML),
                    studio (StudioData + prefs, session files), distortion (FFT, THD/THD+N), stereo (phase
-                   correlation, channel offset, goniometer), acoustics (RT60 Schroeder), feedback (howl detector)
+                   correlation, channel offset, goniometer), acoustics (RT60 Schroeder), feedback (howl detector),
+                   calibration (calibrator check, IEC tolerance, history per profile, loopback, gain advice)
   themes/          Theme contract, registry, one folder per theme
   ui/              React: store (persisted app state), hooks, sound, components/, screens/
   ui/studio/       Studio shell (own scoped CSS, does not use party themes): Monitor (meters, LUFS,
-                   tuner, FFT/RTA/spectrogram, scope, headphone monitoring), Sonómetro, Grabadora,
+                   tuner, FFT/RTA/spectrogram/waterfall, scope, headphone monitoring), Sonómetro, Calibración, Grabadora,
                    Mezclador (virtual console: strips with HPF/notch/gate/EQ/comp/limiter/delay/ducking → A/B buses,
                    pre/post-fader meters, CUE/PFL + headphone monitor, gain staging, anti-feedback, MIDI learn,
                    user presets, scenes,
