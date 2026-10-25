@@ -9,6 +9,12 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
 - `npm test` – Vitest (pure logic only: scoring, modes, studio DSP)
 - `npm run typecheck` – `tsc --noEmit`
 - `npm run build:win` – production build + Windows installer and portable `.exe` in `dist/`
+- `npm run build:studio` – standalone **Gritómetro Studio** (same code, `GRIT_EDITION=studio`) in `dist-studio/`
+
+## Editions
+- **Party** (default): the birthday app, with the hidden studio inside. Released as `vX.Y.Z` (marked Latest).
+- **Studio**: `__EDITION__ === 'studio'` (define injected by `electron.vite.config.ts`). Opens straight into `StudioShell standalone` (no exit to party, no Ctrl+Shift+S), behind an access code (`core/studio/unlock.ts`, only the SHA-256 is stored; remembered via `settings.studioUnlocked`). Own appId/productName (`electron-builder.studio.yml`) and own data folder `%APPDATA%/Gritometro Studio`. Released separately as `studio-vX.Y.Z` with `--latest=false`.
+- Studio improvements go to both editions; keep party-only wording out of the studio (`AudioScreen studio` prop).
 
 ## Architecture (electron-vite layout)
 ```

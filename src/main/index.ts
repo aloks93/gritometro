@@ -4,6 +4,13 @@ import { basename, join } from 'path'
 import { dataPath, readKey, writeKey } from './storage'
 
 let mainWindow: BrowserWindow | null = null
+const STUDIO = __EDITION__ === 'studio'
+
+// The standalone studio keeps its own data folder so it never touches the party app's records
+if (STUDIO) {
+  app.setName('Gritometro Studio')
+  app.setPath('userData', join(app.getPath('appData'), 'Gritometro Studio'))
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -11,8 +18,8 @@ function createWindow(): void {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: '#0b1f3a',
-    title: 'Gritómetro',
+    backgroundColor: STUDIO ? '#0d0f12' : '#0b1f3a',
+    title: STUDIO ? 'Gritómetro Studio' : 'Gritómetro',
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

@@ -5,6 +5,8 @@ export type AppMode = 'party' | 'studio'
 export interface GameSettings {
   /** 'studio' = hidden professional mic-testing interface */
   appMode: AppMode
+  /** Standalone studio app: the access code was entered on this PC */
+  studioUnlocked: boolean
   /** Name of the birthday girl/boy, shown on home, certificates and photos */
   birthdayName: string
   birthdayAge?: number
@@ -31,6 +33,7 @@ export interface GameSettings {
 export function defaultGameSettings(): GameSettings {
   return {
     appMode: 'party',
+    studioUnlocked: false,
     birthdayName: 'Luna',
     countdownSeconds: 3,
     screamSeconds: 3,

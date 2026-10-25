@@ -29,7 +29,6 @@ let lastTab: Tab = 'monitor'
 
 const SHORTCUTS: [string, string][] = [
   ['Ctrl+1 … Ctrl+6', 'Cambiar de pestaña'],
-  ['Ctrl+Shift+S', 'Entrar / salir del modo estudio'],
   ['F11', 'Pantalla completa'],
   ['F · P', 'Monitor: fijar referencia · congelar analizador'],
   ['R · M', 'Grabadora: grabar/detener · marcador'],
@@ -38,7 +37,7 @@ const SHORTCUTS: [string, string][] = [
 ]
 
 /** Hidden professional interface: metering, recording, mic comparison and test signals */
-export function StudioShell(): JSX.Element {
+export function StudioShell({ standalone = false }: { standalone?: boolean }): JSX.Element {
   const { update } = useStore()
   const engine = useEngineState()
   const [prefs, setPrefs] = useStudioPrefs()
@@ -151,9 +150,11 @@ export function StudioShell(): JSX.Element {
           <button className="st-btn ghost" onClick={() => api()?.window.toggleFullscreen()} title="Pantalla completa (F11)">
             ⛶
           </button>
-          <button className="st-btn" onClick={exit} title="Ctrl+Shift+S">
-            Salir del modo estudio
-          </button>
+          {!standalone && (
+            <button className="st-btn" onClick={exit} title="Ctrl+Shift+S">
+              Salir del modo estudio
+            </button>
+          )}
         </div>
       </header>
       <main className="st-main">
@@ -164,7 +165,7 @@ export function StudioShell(): JSX.Element {
         {tab === 'generator' && <GeneratorView />}
         {tab === 'input' && (
           <div className="st-embedded">
-            <AudioScreen navigate={() => setTab('monitor')} />
+            <AudioScreen navigate={() => setTab('monitor')} studio />
           </div>
         )}
       </main>
@@ -179,7 +180,7 @@ export function StudioShell(): JSX.Element {
             </header>
             <table className="st-table">
               <tbody>
-                {SHORTCUTS.map(([k, d]) => (
+                {(standalone ? SHORTCUTS : [SHORTCUTS[0], ['Ctrl+Shift+S', 'Entrar / salir del modo estudio'] as [string, string], ...SHORTCUTS.slice(1)]).map(([k, d]) => (
                   <tr key={k}>
                     <td>
                       <kbd>{k}</kbd>

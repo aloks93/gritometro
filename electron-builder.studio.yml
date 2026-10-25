@@ -1,0 +1,26 @@
+# Standalone "Gritómetro Studio": same code built with GRIT_EDITION=studio (npm run build:studio)
+appId: com.gritometro.studio
+productName: Gritometro Studio
+extraMetadata:
+  name: gritometro-studio
+  description: Gritómetro Studio - medición y comparación profesional de micrófonos.
+directories:
+  buildResources: build
+  output: dist-studio
+files:
+  - out/**/*
+  - package.json
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: Gritometro-Studio-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: Gritometro Studio
+portable:
+  artifactName: Gritometro-Studio-${version}-portable.${ext}

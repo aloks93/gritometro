@@ -60,3 +60,14 @@ describe('report', () => {
     expect(escapeHtml(`"'&`)).toBe('&quot;&#39;&amp;')
   })
 })
+
+describe('studio access code', () => {
+  it('accepts only the right code', async () => {
+    const { isValidStudioCode } = await import('./unlock')
+    expect(await isValidStudioCode('6153996')).toBe(true)
+    expect(await isValidStudioCode(' 615-3996 ')).toBe(true)
+    expect(await isValidStudioCode('6153997')).toBe(false)
+    expect(await isValidStudioCode('')).toBe(false)
+    expect(await isValidStudioCode('abc')).toBe(false)
+  })
+})

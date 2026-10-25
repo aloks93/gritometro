@@ -104,7 +104,8 @@ function TechnicalMeter({ profile }: { profile: AudioProfile }): JSX.Element {
   )
 }
 
-export function AudioScreen({ navigate }: { navigate: Navigate }): JSX.Element {
+/** `studio`: embedded in the studio, so the hints talk about recording instead of the party */
+export function AudioScreen({ navigate, studio = false }: { navigate: Navigate; studio?: boolean }): JSX.Element {
   const { data, update } = useStore()
   const audio = data.audio
   const profile = activeProfile(audio)
@@ -213,7 +214,11 @@ export function AudioScreen({ navigate }: { navigate: Navigate }): JSX.Element {
           </button>
           <span className="muted">Ruido ambiente: {profile.noiseFloorDb.toFixed(1)} dBFS</span>
         </div>
-        <p className="field-hint">Calibra con el ruido normal de la fiesta (música y gente), sin que nadie grite al micrófono.</p>
+        <p className="field-hint">
+          {studio
+            ? 'Mide el ruido de la sala en silencio, con la ganancia que vayas a usar.'
+            : 'Calibra con el ruido normal de la fiesta (música y gente), sin que nadie grite al micrófono.'}
+        </p>
       </Panel>
 
       {advanced && (
@@ -336,7 +341,11 @@ export function AudioScreen({ navigate }: { navigate: Navigate }): JSX.Element {
                 </li>
                 <li>Pon la frecuencia en 48 kHz (igual que VoiceMeeter → Menu → System Settings).</li>
                 <li>No subas el fader de la tira por encima de 0 dB o saturará: mira el LED CLIP.</li>
-                <li>Puedes aplicar EQ/compresor en VoiceMeeter, pero un compresor fuerte iguala a todos: mejor dejarlo apagado para el reto.</li>
+                <li>
+                  {studio
+                    ? 'Para medir o comparar micrófonos deja apagados el EQ y el compresor de VoiceMeeter: alteran el resultado.'
+                    : 'Puedes aplicar EQ/compresor en VoiceMeeter, pero un compresor fuerte iguala a todos: mejor dejarlo apagado para el reto.'}
+                </li>
               </ol>
             </details>
             <details>
@@ -345,7 +354,7 @@ export function AudioScreen({ navigate }: { navigate: Navigate }): JSX.Element {
                 <li>Conecta la consola por USB; aparecerá como un dispositivo de entrada (p. ej. "USB Audio CODEC").</li>
                 <li>Si tiene varias entradas por USB, elige "Un canal específico" y el canal del micrófono.</li>
                 <li>Si solo envía el master estéreo por USB, usa "Mezcla" y baja el resto de canales en la consola.</li>
-                <li>Ajusta la ganancia (gain/trim) de la consola para que un grito fuerte no encienda el LED CLIP.</li>
+                <li>Ajusta la ganancia (gain/trim) de la consola para que {studio ? 'la voz más fuerte' : 'un grito fuerte'} no encienda el LED CLIP.</li>
                 <li>Calibra el ruido ambiente después de ajustar la consola.</li>
               </ol>
             </details>

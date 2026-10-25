@@ -15,6 +15,7 @@ import { PlayersScreen } from './ui/screens/PlayersScreen'
 import { RecordsScreen } from './ui/screens/RecordsScreen'
 import { SettingsScreen } from './ui/screens/SettingsScreen'
 import { StudioShell } from './ui/studio/StudioShell'
+import { UnlockScreen } from './ui/studio/UnlockScreen'
 import { ScreenErrorBoundary } from './ui/components/ScreenErrorBoundary'
 
 /** Publishes theme tokens as CSS variables: --c-<token>, --font-display, --font-body, --radius */
@@ -67,8 +68,8 @@ function Shell(): JSX.Element {
         e.preventDefault()
         api()?.window.toggleFullscreen()
       }
-      // Hidden switch to the professional studio interface
-      if (e.ctrlKey && e.shiftKey && e.code === 'KeyS') {
+      // Hidden switch to the professional studio interface (the studio edition has no party side)
+      if (__EDITION__ === 'party' && e.ctrlKey && e.shiftKey && e.code === 'KeyS') {
         e.preventDefault()
         update('settings', (s) => ({ ...s, appMode: s.appMode === 'studio' ? 'party' : 'studio' }))
       }
@@ -79,9 +80,11 @@ function Shell(): JSX.Element {
 
   const { birthdayName } = data.settings
   useEffect(() => {
+    if (__EDITION__ === 'studio') return
     document.title = birthdayName ? `${theme.texts.appTitle} · ${birthdayName}` : theme.texts.appTitle
   }, [theme.texts.appTitle, birthdayName])
 
+  if (__EDITION__ === 'studio') return data.settings.studioUnlocked ? <StudioShell standalone /> : <UnlockScreen />
   if (data.settings.appMode === 'studio') return <StudioShell />
 
   const navigate = setRoute
