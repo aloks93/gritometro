@@ -10,13 +10,18 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
 - `npm run typecheck` – `tsc --noEmit`
 - `npm run build:win` – production build + Windows installer and portable `.exe` in `dist/`
 - `npm run build:studio` – standalone **Gritómetro Studio** (same code, `GRIT_EDITION=studio`) in `dist-studio/`
-- `npm run build:mac` / `npm run build:studio:mac` – macOS dmg/zip (only on a Mac). Releases get them from
+- `npm run build:processor` – standalone **Gritómetro Procesador** (`GRIT_EDITION=processor`) in `dist-procesador/`
+- `npm run render:icon` – re-renders `build/processor/icon.svg` → `icon.png` (1024², via Electron)
+- `npm run build:mac` / `npm run build:studio:mac` / `npm run build:processor:mac` – macOS dmg/zip (only on a Mac). Releases get them from
   `.github/workflows/macos.yml`, which builds on a Mac runner when a release is published and attaches the files
 
 ## Editions
 - **Party** (default): the birthday app, with the hidden studio inside. Released as `vX.Y.Z` (marked Latest).
 - **Studio**: `__EDITION__ === 'studio'` (define injected by `electron.vite.config.ts`). Opens straight into `StudioShell standalone` (no exit to party, no Ctrl+Shift+S), behind an access code (`core/studio/unlock.ts`, only the SHA-256 is stored; remembered via `settings.studioUnlocked`). Own appId/productName (`electron-builder.studio.yml`) and own data folder `%APPDATA%/Gritometro Studio`. Released separately as `studio-vX.Y.Z` with `--latest=false`.
-- Studio improvements go to both editions; keep party-only wording out of the studio (`AudioScreen studio` prop).
+- **Procesador**: `__EDITION__ === 'processor'`. Only the mic processor (`ProcessorShell` → `ProcessorView`), no access code,
+  no party mic (`useAudioBoot` disabled). Own appId/productName/icon (`electron-builder.processor.yml`, `build/processor/`),
+  data folder `%APPDATA%/Gritometro Procesador`. Released as `procesador-vX.Y.Z` with `--latest=false`.
+- Studio improvements go to every edition; keep party-only wording out of the studio (`AudioScreen studio` prop).
 - Studio language (ES/EN, `prefs.language`, auto = system): the studio is written in Spanish and `ui/studio/i18n.ts`
   translates what it renders (MutationObserver), plus confirm(), PDF reports and CSVs. **New studio texts need an
   English entry in `ui/studio/i18n.en.ts`** (exact text, or a `{0}` pattern for templates). The party app stays Spanish.
@@ -38,7 +43,9 @@ src/renderer/src/
     players/       players, teams, avatars, age handicap
     settings/      game settings + defaults (appMode, birthdayName)
     processor/     mic processor: model, 8-band parametric EQ (exact Web Audio biquads), presets use × mic,
-                   auto setup (dynamics.ts: gate/expander, de-esser, compressor, look-ahead limiter, shared with the worklet)
+                   auto setup; dynamics.ts (gate/expander with key filters, de-esser, compressor with sidechain HPF
+                   and auto makeup, saturator, look-ahead limiter) and noise.ts (STFT Wiener noise suppressor,
+                   learned or adaptive profile), both shared with processor.worklet.ts
     mixer/         pure mixer model: strips, buses, solo/mute, pan law, fader taper, EQ response,
                    routing warnings, scenes, auto trim (MixerEngine.ts in audio/ builds the graph)
     studio/        pure studio DSP: analysis (third-octave, centroid, SNR, technicalScore, WAV 16/24/float
@@ -63,8 +70,9 @@ src/renderer/src/
                    pre/post-fader meters, CUE/PFL + headphone monitor, gain staging, anti-feedback, MIDI learn,
                    user presets, scenes,
                    stereo bus recording, auto trim; any bus can feed the analyzers),
-                   Procesador (one mic → gate → parametric EQ → de-esser → comp ×2 → limiter → VoiceMeeter Input /
-                   any output, headphone monitor, bypass A/B, presets, auto assistant),
+                   Procesador (ProcessorView + processor.css + controls.tsx knobs/meters/icons: one mic → noise
+                   reduction → gate → parametric EQ → de-esser → comp ×2 → saturator → limiter → VoiceMeeter Input /
+                   any output, LUFS/true peak, EQ/dynamics/noise graphs, bypass A/B, presets, auto assistant; no emoji),
                    Comparador (takes, synced A/B, blind test, difference curves, best mic per use, session/PDF),
                    Laboratorio (THD+N, phase/goniometer + mic alignment, room RT60), Equipos (device inventory,
                    capabilities, profiles per device, engine latency), Generador (signals +

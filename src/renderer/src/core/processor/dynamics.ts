@@ -1,8 +1,8 @@
 import { compressorCurve } from '../studio/dsp'
 
-// Sample-by-sample dynamics for the mic processor: gate/expander, de-esser, compressor and
-// look-ahead limiter. Pure TS so the same code runs in the AudioWorklet and in the tests.
-// Every class processes a mono block in place and keeps its own state between blocks.
+// Sample-by-sample dynamics for the mic processor: gate/expander, de-esser, compressor,
+// saturation and look-ahead limiter. Pure TS so the same code runs in the AudioWorklet and in
+// the tests. Every class processes a mono block in place and keeps its own state between blocks.
 
 export const dbToLin = (db: number): number => Math.pow(10, db / 20)
 export const linToDb = (g: number): number => (g > 1e-9 ? 20 * Math.log10(g) : -180)
@@ -10,6 +10,51 @@ export const linToDb = (g: number): number => (g > 1e-9 ? 20 * Math.log10(g) : -
 /** One-pole smoothing coefficient for a time constant in ms */
 export function coef(ms: number, sampleRate: number): number {
   return 1 - Math.exp(-1 / (Math.max(0.01, ms) / 1000 * sampleRate))
+}
+
+/** Second-order section (RBJ cookbook) with its own state, for detector/sidechain filters */
+export class Section {
+  private b0 = 1
+  private b1 = 0
+  private b2 = 0
+  private a1 = 0
+  private a2 = 0
+  private z1 = 0
+  private z2 = 0
+  active = false
+
+  constructor(private sampleRate: number) {}
+
+  /** hz ≤ 0 switches the section off (pass-through) */
+  design(type: 'highpass' | 'lowpass' | 'bandpass', hz: number, q = Math.SQRT1_2): void {
+    const sr = this.sampleRate
+    this.active = hz > 0 && hz < sr * 0.49
+    if (!this.active) return
+    const w = (2 * Math.PI * hz) / sr
+    const cos = Math.cos(w)
+    const alpha = Math.sin(w) / (2 * q)
+    const a0 = 1 + alpha
+    if (type === 'bandpass') {
+      this.b0 = alpha / a0
+      this.b1 = 0
+      this.b2 = -alpha / a0
+    } else {
+      const lp = type === 'lowpass'
+      this.b0 = (lp ? (1 - cos) / 2 : (1 + cos) / 2) / a0
+      this.b1 = (lp ? 1 - cos : -(1 + cos)) / a0
+      this.b2 = this.b0
+    }
+    this.a1 = (-2 * cos) / a0
+    this.a2 = (1 - alpha) / a0
+  }
+
+  process(x: number): number {
+    if (!this.active) return x
+    const y = this.b0 * x + this.z1
+    this.z1 = this.b1 * x - this.a1 * y + this.z2
+    this.z2 = this.b2 * x - this.a2 * y
+    return y
+  }
 }
 
 // ---- Gate / expander
@@ -28,43 +73,68 @@ export interface GateParams {
   attackMs: number
   holdMs: number
   releaseMs: number
+  /** Detector filters: rumble (HPF) and hiss (LPF) don't open the gate. 0 = off */
+  keyHpfHz: number
+  keyLpfHz: number
 }
 
 export class Gate {
   private env = 0
   private gainDb = 0
   private holdLeft = 0
+  private hpf: Section
+  private lpf: Section
+  private key = ''
   open = true
   /** Lowest gain applied in the last block, dB */
   blockGainDb = 0
+  /** Highest detector level in the last block, dB */
+  blockLevelDb = -100
 
-  constructor(private sampleRate: number, private p: GateParams) {}
+  constructor(private sampleRate: number, private p: GateParams) {
+    this.hpf = new Section(sampleRate)
+    this.lpf = new Section(sampleRate)
+    this.set(p)
+  }
 
   set(p: GateParams): void {
     this.p = p
+    const key = `${p.keyHpfHz}|${p.keyLpfHz}`
+    if (key === this.key) return
+    this.key = key
+    this.hpf.design('highpass', p.keyHpfHz ?? 0)
+    this.lpf.design('lowpass', p.keyLpfHz ?? 0)
   }
 
   process(buf: Float32Array): void {
     const p = this.p
+    const sr = this.sampleRate
+    // Peak envelope: instant rise, ~10 ms fall
+    const envDecay = Math.exp(-1 / (0.01 * sr))
+    let level = 0
     if (!p.on) {
+      for (let i = 0; i < buf.length; i++) {
+        const a = Math.abs(this.lpf.process(this.hpf.process(buf[i])))
+        this.env = a > this.env ? a : this.env * envDecay
+        if (this.env > level) level = this.env
+      }
       this.open = true
       this.gainDb = 0
       this.blockGainDb = 0
+      this.blockLevelDb = linToDb(level)
       return
     }
-    const sr = this.sampleRate
     const openLin = dbToLin(p.thresholdDb)
     const closeLin = dbToLin(p.thresholdDb - Math.max(0, p.hysteresisDb))
     const att = coef(p.attackMs, sr)
     const rel = coef(p.releaseMs, sr)
     const hold = (p.holdMs / 1000) * sr
-    // Peak envelope: instant rise, ~10 ms fall
-    const envDecay = Math.exp(-1 / (0.01 * sr))
     const range = Math.min(0, p.rangeDb)
     let lowest = 0
     for (let i = 0; i < buf.length; i++) {
-      const a = Math.abs(buf[i])
+      const a = Math.abs(this.lpf.process(this.hpf.process(buf[i])))
       this.env = a > this.env ? a : this.env * envDecay
+      if (this.env > level) level = this.env
       let target: number
       if (p.mode === 'expander') {
         const envDb = linToDb(this.env)
@@ -95,6 +165,7 @@ export class Gate {
       buf[i] *= dbToLin(this.gainDb)
     }
     this.blockGainDb = lowest
+    this.blockLevelDb = linToDb(level)
   }
 }
 
@@ -108,55 +179,78 @@ export interface CompParams {
   attackMs: number
   releaseMs: number
   makeupDb: number
+  /** Adds the gain the static curve takes away at −18 dBFS (a typical voice), on top of makeupDb */
+  autoMakeup: boolean
   /** Parallel ("New York") compression: 0 = dry … 100 = fully compressed, % */
   mix: number
   /** Peak follows transients (control), RMS follows loudness (smoother levelling) */
   detector: 'peak' | 'rms'
+  /** Sidechain high-pass: plosives and low end don't pump the voice. 0 = off */
+  scHpfHz: number
+}
+
+/** Makeup added by `autoMakeup` */
+export function autoMakeupDb(p: Pick<CompParams, 'thresholdDb' | 'ratio' | 'kneeDb'>): number {
+  const ref = -18
+  return Math.max(0, ref - compressorCurve(ref, p.thresholdDb, Math.max(1, p.ratio), Math.max(0, p.kneeDb)))
 }
 
 export class Compressor {
   private grDb = 0
   private ms = 0
+  private sc: Section
+  private scHz = -1
   /** Deepest gain reduction in the last block, dB (≤ 0) */
   blockGr = 0
+  /** Highest detector level in the last block, dB */
+  blockLevelDb = -100
 
-  constructor(private sampleRate: number, private p: CompParams) {}
+  constructor(private sampleRate: number, private p: CompParams) {
+    this.sc = new Section(sampleRate)
+    this.set(p)
+  }
 
   set(p: CompParams): void {
     this.p = p
+    if ((p.scHpfHz ?? 0) !== this.scHz) {
+      this.scHz = p.scHpfHz ?? 0
+      this.sc.design('highpass', this.scHz)
+    }
   }
 
   process(buf: Float32Array): void {
     const p = this.p
-    if (!p.on) {
-      this.grDb = 0
-      this.blockGr = 0
-      return
-    }
     const att = coef(p.attackMs, this.sampleRate)
     const rel = coef(p.releaseMs, this.sampleRate)
     const rmsK = coef(10, this.sampleRate)
     const ratio = Math.max(1, p.ratio)
+    const knee = Math.max(0, p.kneeDb)
     const wet = Math.max(0, Math.min(100, p.mix)) / 100
-    const makeup = dbToLin(p.makeupDb)
+    const makeup = dbToLin(p.makeupDb + (p.autoMakeup ? autoMakeupDb(p) : 0))
     let lowest = 0
+    let level = -100
     for (let i = 0; i < buf.length; i++) {
       const x = buf[i]
+      const d = this.sc.process(x)
       let levelDb: number
       if (p.detector === 'rms') {
-        this.ms += (x * x - this.ms) * rmsK
+        this.ms += (d * d - this.ms) * rmsK
         // +3 dB so a sine reads its peak level, like the peak detector
         levelDb = linToDb(Math.sqrt(this.ms)) + 3.01
       } else {
-        levelDb = linToDb(Math.abs(x))
+        levelDb = linToDb(Math.abs(d))
       }
-      const target = compressorCurve(levelDb, p.thresholdDb, ratio, Math.max(0, p.kneeDb)) - levelDb
+      if (levelDb > level) level = levelDb
+      if (!p.on) continue
+      const target = compressorCurve(levelDb, p.thresholdDb, ratio, knee) - levelDb
       // More reduction = attack, less = release
       this.grDb += (target - this.grDb) * (target < this.grDb ? att : rel)
       if (this.grDb < lowest) lowest = this.grDb
       const y = x * dbToLin(this.grDb) * makeup
       buf[i] = wet >= 1 ? y : x * (1 - wet) + y * wet
     }
+    this.blockLevelDb = level
+    if (!p.on) this.grDb = 0
     this.blockGr = lowest
   }
 }
@@ -167,7 +261,11 @@ export interface DeEsserParams {
   on: boolean
   /** Centre of the sibilance band (and split point), Hz */
   freq: number
+  /** Width of the detection band (Q) */
+  q: number
   thresholdDb: number
+  /** Compression ratio above the threshold */
+  ratio: number
   /** Maximum reduction, dB (negative) */
   rangeDb: number
   /** 'split' only turns the highs down; 'wide' turns the whole signal down */
@@ -177,37 +275,28 @@ export interface DeEsserParams {
 }
 
 export class DeEsser {
-  private bp = { b0: 0, b1: 0, b2: 0, a1: 0, a2: 0, z1: 0, z2: 0 }
-  private lp = { b0: 0, b1: 0, b2: 0, a1: 0, a2: 0, z1: 0, z2: 0 }
+  private bp: Section
+  private lp: Section
   private env = 0
   private grDb = 0
-  private freq = 0
+  private key = ''
   blockGr = 0
 
   constructor(private sampleRate: number, private p: DeEsserParams) {
-    this.design()
+    this.bp = new Section(sampleRate)
+    this.lp = new Section(sampleRate)
+    this.set(p)
   }
 
   set(p: DeEsserParams): void {
     this.p = p
-    if (p.freq !== this.freq) this.design()
-  }
-
-  private design(): void {
-    const sr = this.sampleRate
-    const f = Math.max(1000, Math.min(sr * 0.45, this.p.freq))
-    this.freq = this.p.freq
-    // Constant-skirt band-pass, Q 1.4: covers "s" and "sh" around the centre
-    const w = (2 * Math.PI * f) / sr
-    const alpha = Math.sin(w) / (2 * 1.4)
-    const a0 = 1 + alpha
-    Object.assign(this.bp, { b0: alpha / a0, b1: 0, b2: -alpha / a0, a1: (-2 * Math.cos(w)) / a0, a2: (1 - alpha) / a0 })
+    const key = `${p.freq}|${p.q}`
+    if (key === this.key) return
+    this.key = key
+    const f = Math.max(1000, Math.min(this.sampleRate * 0.45, p.freq))
+    this.bp.design('bandpass', f, Math.max(0.3, p.q ?? 1.4))
     // Split: low = LP(x), high = x − low, so the bands always add back up exactly
-    const wl = (2 * Math.PI * f * 0.6) / sr
-    const al = Math.sin(wl) / (2 * Math.SQRT1_2)
-    const cl = Math.cos(wl)
-    const l0 = 1 + al
-    Object.assign(this.lp, { b0: (1 - cl) / 2 / l0, b1: (1 - cl) / l0, b2: (1 - cl) / 2 / l0, a1: (-2 * cl) / l0, a2: (1 - al) / l0 })
+    this.lp.design('lowpass', f * 0.6)
   }
 
   process(buf: Float32Array): void {
@@ -221,30 +310,85 @@ export class DeEsser {
     const rel = coef(60, this.sampleRate)
     const envDecay = Math.exp(-1 / (0.02 * this.sampleRate))
     const range = Math.min(0, p.rangeDb)
-    const f = this.bp
-    const l = this.lp
+    const slope = 1 - 1 / Math.max(1, p.ratio ?? 4)
     let lowest = 0
     for (let i = 0; i < buf.length; i++) {
       const x = buf[i]
-      const s = f.b0 * x + f.z1
-      f.z1 = f.b1 * x - f.a1 * s + f.z2
-      f.z2 = f.b2 * x - f.a2 * s
+      const s = this.bp.process(x)
       const a = Math.abs(s)
       this.env = a > this.env ? a : this.env * envDecay
       const over = linToDb(this.env) - p.thresholdDb
-      // 4:1 above the threshold, down to the range
-      const target = over > 0 ? Math.max(range, -over * 0.75) : 0
+      const target = over > 0 ? Math.max(range, -over * slope) : 0
       this.grDb += (target - this.grDb) * (target < this.grDb ? att : rel)
       if (this.grDb < lowest) lowest = this.grDb
       const g = dbToLin(this.grDb)
-      const low = l.b0 * x + l.z1
-      l.z1 = l.b1 * x - l.a1 * low + l.z2
-      l.z2 = l.b2 * x - l.a2 * low
+      const low = this.lp.process(x)
       if (p.listen) buf[i] = s
       else if (p.mode === 'wide') buf[i] = x * g
       else buf[i] = low + (x - low) * g
     }
     this.blockGr = lowest
+  }
+}
+
+// ---- Saturation
+
+export interface SaturationParams {
+  on: boolean
+  /** 'tape' = symmetric (odd harmonics), 'tube' = asymmetric (adds even harmonics) */
+  mode: 'tape' | 'tube'
+  driveDb: number
+  /** Brightness of the saturated part: low-pass on the wet signal, Hz */
+  toneHz: number
+  /** Dry/wet, % */
+  mix: number
+}
+
+const TUBE_BIAS = 0.25
+const TUBE_SLOPE = 1 - Math.tanh(TUBE_BIAS) ** 2
+
+/** Static saturation curve, unity gain for small signals */
+export function saturate(x: number, drive: number, mode: SaturationParams['mode']): number {
+  const u = x * drive
+  const y = mode === 'tube' ? (Math.tanh(u + TUBE_BIAS) - Math.tanh(TUBE_BIAS)) / TUBE_SLOPE : Math.tanh(u)
+  return y / drive
+}
+
+export class Saturator {
+  private tone: Section
+  private toneHz = -1
+  private dc = 0
+  private dcIn = 0
+
+  constructor(private sampleRate: number, private p: SaturationParams) {
+    this.tone = new Section(sampleRate)
+    this.set(p)
+  }
+
+  set(p: SaturationParams): void {
+    this.p = p
+    if (p.toneHz !== this.toneHz) {
+      this.toneHz = p.toneHz
+      this.tone.design('lowpass', p.toneHz >= 19000 ? 0 : p.toneHz)
+    }
+  }
+
+  process(buf: Float32Array): void {
+    const p = this.p
+    if (!p.on) return
+    const drive = dbToLin(Math.max(0, p.driveDb))
+    const wet = Math.max(0, Math.min(100, p.mix)) / 100
+    // DC blocker after the asymmetric curve (~5 Hz)
+    const r = 1 - (2 * Math.PI * 5) / this.sampleRate
+    for (let i = 0; i < buf.length; i++) {
+      const x = buf[i]
+      let s = saturate(x, drive, p.mode)
+      const y = s - this.dcIn + r * this.dc
+      this.dcIn = s
+      this.dc = y
+      s = this.tone.process(y)
+      buf[i] = x * (1 - wet) + s * wet
+    }
   }
 }
 

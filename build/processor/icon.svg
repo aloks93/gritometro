@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Gritómetro Procesador: a raw waveform enters a processing module and leaves controlled,
+       over a parametric EQ curve. Neutral, professional, no characters. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#202832"/>
+      <stop offset="1" stop-color="#090c10"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a5564"/>
+      <stop offset="1" stop-color="#1a1f26"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" x2="1">
+      <stop offset="0" stop-color="#7f8a99"/>
+      <stop offset="0.42" stop-color="#9fb4c8"/>
+      <stop offset="0.58" stop-color="#3fb6ff"/>
+      <stop offset="1" stop-color="#4dd6c9"/>
+    </linearGradient>
+    <linearGradient id="module" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3440"/>
+      <stop offset="1" stop-color="#151a20"/>
+    </linearGradient>
+    <linearGradient id="eq" x1="0" x2="1">
+      <stop offset="0" stop-color="#ffb020" stop-opacity="0.2"/>
+      <stop offset="0.5" stop-color="#ffb020"/>
+      <stop offset="1" stop-color="#ffb020" stop-opacity="0.2"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="screen">
+      <rect x="132" y="168" width="760" height="688" rx="36"/>
+    </clipPath>
+  </defs>
+
+  <rect x="40" y="40" width="944" height="944" rx="208" fill="url(#bg)"/>
+  <rect x="42" y="42" width="940" height="940" rx="206" fill="none" stroke="url(#rim)" stroke-width="4"/>
+
+  <!-- display -->
+  <rect x="132" y="168" width="760" height="688" rx="36" fill="#07090c" stroke="#2a313b" stroke-width="3"/>
+  <g clip-path="url(#screen)" stroke="#161b22" stroke-width="3">
+    <path d="M132 340H892M132 512H892M132 684H892"/>
+    <path d="M284 168V856M436 168V856M588 168V856M740 168V856"/>
+  </g>
+
+  <!-- EQ curve -->
+  <path d="M150 700 C 250 700, 290 640, 360 640 S 470 730, 540 730 S 650 600, 720 600 S 820 680, 874 680" fill="none" stroke="url(#eq)" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- waveform: raw on the left, controlled on the right -->
+  <path filter="url(#glow)" fill="none" stroke="url(#wave)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"
+        d="M160 512 L196 512 L220 380 L248 650 L276 300 L304 720 L332 360 L360 610 L388 430 L412 512
+           L612 512 L630 452 L652 572 L674 448 L696 576 L718 456 L740 568 L762 466 L784 556 L806 482 L828 532 L850 512 L866 512"/>
+
+  <!-- processing module -->
+  <rect x="428" y="292" width="168" height="440" rx="22" fill="url(#module)" stroke="#3b4553" stroke-width="4"/>
+  <rect x="452" y="320" width="120" height="10" rx="5" fill="#3fb6ff"/>
+  <circle cx="512" cy="430" r="44" fill="#0c0f13" stroke="#3b4553" stroke-width="4"/>
+  <path d="M480 452 A 44 44 0 1 1 548 452" fill="none" stroke="#3fb6ff" stroke-width="8" stroke-linecap="round"/>
+  <path d="M512 430 L540 404" stroke="#e9edf2" stroke-width="8" stroke-linecap="round"/>
+  <g fill="#0c0f13" stroke="#3b4553" stroke-width="3">
+    <rect x="462" y="510" width="16" height="190" rx="6"/>
+    <rect x="504" y="510" width="16" height="190" rx="6"/>
+    <rect x="546" y="510" width="16" height="190" rx="6"/>
+  </g>
+  <rect x="456" y="610" width="28" height="16" rx="4" fill="#4dd6c9"/>
+  <rect x="498" y="560" width="28" height="16" rx="4" fill="#ffb020"/>
+  <rect x="540" y="640" width="28" height="16" rx="4" fill="#ff6b8b"/>
+</svg>

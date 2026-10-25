@@ -1,0 +1,40 @@
+# Standalone "Gritómetro Procesador": same code built with GRIT_EDITION=processor (npm run build:processor)
+appId: com.gritometro.procesador
+productName: Gritometro Procesador
+extraMetadata:
+  name: gritometro-procesador
+  description: Gritómetro Procesador - procesador vocal para micrófonos (reducción de ruido, EQ, dinámica) con salida a VoiceMeeter.
+directories:
+  buildResources: build/processor
+  output: dist-procesador
+files:
+  - out/**/*
+  - package.json
+win:
+  icon: build/processor/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: Gritometro-Procesador-${version}-${arch}.${ext}
+mac:
+  icon: build/processor/icon.png
+  category: public.app-category.music
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  artifactName: Gritometro-Procesador-${version}-mac-${arch}.${ext}
+  # No Apple certificate: ad-hoc signature, first launch with right-click → Open
+  identity: '-'
+  hardenedRuntime: false
+  extendInfo:
+    NSMicrophoneUsageDescription: Gritómetro Procesador needs the microphone to process your voice.
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: Gritometro Procesador
+portable:
+  artifactName: Gritometro-Procesador-${version}-portable.${ext}

@@ -1,6 +1,7 @@
 import type { ProcessorConfig } from '../processor/processor'
 import { bandStages, MAX_BANDS, STAGES_PER_BAND } from '../processor/processor'
 import { lookaheadSamples } from '../processor/dynamics'
+import { noiseLatency } from '../processor/noise'
 import { dbToGain } from '../mixer/mixer'
 // Bundled as its own script so the worklet can import the shared DSP
 import workletUrl from './processor.worklet.ts?worker&url'
@@ -8,9 +9,9 @@ import workletUrl from './processor.worklet.ts?worker&url'
 // Web Audio graph of the mic processor. One mic channel in, processed mono out to a
 // device (VoiceMeeter Input, a virtual cable…) plus an optional headphone monitor.
 //
-// mic → channel pick → input gain → phase ─┬→ gate → [EQ] → de-esser/comp1/comp2 → [EQ] → limiter → wet ─┐
-//                                           └→ look-ahead delay → dry (bypass) ─────────────────────────────┴→ output gain
-// output gain → mute → output device · → monitor level → headphones · → stream (studio analyzers)
+// mic → channel → input gain → phase ─┬→ noise reduction → gate → [EQ] → de-esser/comp1/comp2/saturation → [EQ] → limiter → wet ─┐
+//                                      └→ delay (= noise frame + look-ahead) → dry (bypass) ──────────────────────────────────────┴→ output gain
+// output gain → mute → output device · → monitor level → headphones · → loudness meter · → stream (studio analyzers)
 
 export type ProcessorStatus = 'off' | 'starting' | 'on' | 'error'
 
@@ -38,6 +39,31 @@ export interface ProcessorLevels {
   comp1Gr: number
   comp2Gr: number
   limGr: number
+  /** Noise reduction applied right now, dB (≤ 0) */
+  noiseGr: number
+  noiseLearning: boolean
+  /** Detector levels, for the live dots on the transfer curves */
+  gateLevel: number
+  comp1In: number
+  comp2In: number
+}
+
+export interface ProcessorLoudness {
+  momentary: number
+  shortTerm: number
+  integrated: number
+  lra: number
+  truePeak: number
+}
+
+/** Last frame of the noise suppressor, per FFT bin */
+export interface NoiseCurves {
+  gains: Float32Array
+  noise: Float32Array
+  power: Float32Array
+  /** FFT size the bins belong to */
+  size: number
+  sampleRate: number
 }
 
 type SinkContext = AudioContext & { setSinkId?: (id: string) => Promise<void>; outputLatency?: number }
@@ -49,6 +75,9 @@ interface Graph {
   inGain: GainNode
   phase: GainNode
   inMeter: AnalyserNode
+  noise: AudioWorkletNode
+  noiseSize: number
+  meter: AudioWorkletNode
   gate: AudioWorkletNode
   eq: BiquadFilterNode[]
   dynamics: AudioWorkletNode
@@ -69,7 +98,7 @@ export const PROCESSOR_FFT = 8192
 
 /** Inputs whose change needs the graph rebuilt (everything else is applied live) */
 export function processorStructureKey(cfg: ProcessorConfig): string {
-  return JSON.stringify([cfg.sampleRate, cfg.input.deviceId, cfg.input.channel, cfg.eqPosition, cfg.monitor.on])
+  return JSON.stringify([cfg.sampleRate, cfg.input.deviceId, cfg.input.channel, cfg.eqPosition, cfg.monitor.on, cfg.noise.resolution])
 }
 
 class ProcessorEngine {
@@ -80,7 +109,10 @@ class ProcessorEngine {
   private listeners = new Set<(s: ProcessorState) => void>()
   private _state: ProcessorState = { status: 'off', generation: 0 }
   private buf = new Float32Array(2048)
-  private reports = { gateOpen: true, gateDb: 0, deess: 0, comp1: 0, comp2: 0, lim: 0 }
+  private reports = emptyReports()
+  private loud: ProcessorLoudness | null = null
+  private curves: NoiseCurves | null = null
+  private profileListeners = new Set<(profile: number[]) => void>()
 
   get state(): ProcessorState {
     return this._state
@@ -128,7 +160,7 @@ class ProcessorEngine {
       this.applyParams(newest)
       if (ctx.state === 'suspended') await ctx.resume()
       const settings = track.getSettings() as MediaTrackSettings & { latency?: number }
-      const latencyMs = ((settings.latency ?? 0) + ctx.baseLatency + (ctx.outputLatency ?? 0)) * 1000 + (lookaheadSamples(ctx.sampleRate) / ctx.sampleRate) * 1000
+      const latencyMs = ((settings.latency ?? 0) + ctx.baseLatency + (ctx.outputLatency ?? 0)) * 1000 + ((lookaheadSamples(ctx.sampleRate) + g.noiseSize) / ctx.sampleRate) * 1000
       this.setState({
         status: 'on',
         sampleRate: ctx.sampleRate,
@@ -203,6 +235,16 @@ class ProcessorEngine {
     const inMeter = analyser(ctx, 2048)
     const worklet = (name: string): AudioWorkletNode =>
       new AudioWorkletNode(ctx, name, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 1, channelCountMode: 'explicit' })
+    const noiseSize = noiseLatency(cfg.noise.resolution)
+    const noise = new AudioWorkletNode(ctx, 'vp-noise', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      channelCount: 1,
+      channelCountMode: 'explicit',
+      processorOptions: { resolution: cfg.noise.resolution }
+    })
+    const meter = worklet('vp-meter')
     const gate = worklet('vp-gate')
     const dynamics = worklet('vp-dynamics')
     const limiter = worklet('vp-limiter')
@@ -210,7 +252,8 @@ class ProcessorEngine {
     const eq = Array.from({ length: MAX_BANDS * STAGES_PER_BAND }, () => mono(ctx.createBiquadFilter()) as BiquadFilterNode)
     const wet = mono(ctx.createGain()) as GainNode
     const dryDelay = ctx.createDelay(0.05)
-    dryDelay.delayTime.value = lookaheadSamples(ctx.sampleRate) / ctx.sampleRate
+    // The dry path waits exactly as long as the processed one, so A/B never shifts in time
+    dryDelay.delayTime.value = (lookaheadSamples(ctx.sampleRate) + noiseSize) / ctx.sampleRate
     const dry = mono(ctx.createGain()) as GainNode
     const outGain = mono(ctx.createGain()) as GainNode
     const outMeter = analyser(ctx, 2048)
@@ -222,12 +265,16 @@ class ProcessorEngine {
     inGain.connect(phase)
     phase.connect(inMeter)
     const dynChain = cfg.eqPosition === 'post' ? [dynamics, ...eq] : [...eq, dynamics]
-    chain([phase, gate, ...dynChain, limiter, wet, outGain])
+    chain([phase, noise, gate, ...dynChain, limiter, wet, outGain])
     gate.connect(inSpectrum)
     chain([phase, dryDelay, dry, outGain])
     outGain.connect(outMeter)
     outGain.connect(outSpectrum)
     outGain.connect(outStream)
+    // The meter must be pulled by the graph: route it into a silent gain
+    const silent = ctx.createGain()
+    silent.gain.value = 0
+    outGain.connect(meter).connect(silent).connect(ctx.destination)
     // A mono node into the stereo destination is up-mixed to both sides
     outGain.connect(mute).connect(ctx.destination)
 
@@ -242,20 +289,35 @@ class ProcessorEngine {
       monitor = { level, audio }
     }
 
-    this.reports = { gateOpen: true, gateDb: 0, deess: 0, comp1: 0, comp2: 0, lim: 0 }
-    gate.port.onmessage = (e: MessageEvent<{ open: boolean; gainDb: number }>) => {
+    this.reports = emptyReports()
+    this.loud = null
+    this.curves = null
+    gate.port.onmessage = (e: MessageEvent<{ open: boolean; gainDb: number; level: number }>) => {
       this.reports.gateOpen = e.data.open
       this.reports.gateDb = e.data.gainDb
+      this.reports.gateLevel = e.data.level
     }
-    dynamics.port.onmessage = (e: MessageEvent<{ deess: number; comp1: number; comp2: number }>) => {
+    dynamics.port.onmessage = (e: MessageEvent<{ deess: number; comp1: number; comp2: number; comp1In: number; comp2In: number }>) => {
       this.reports.deess = e.data.deess
       this.reports.comp1 = e.data.comp1
       this.reports.comp2 = e.data.comp2
+      this.reports.comp1In = e.data.comp1In
+      this.reports.comp2In = e.data.comp2In
+    }
+    noise.port.onmessage = (e: MessageEvent<{ reduction: number; learning: boolean; learned: number[] | null; curves: Omit<NoiseCurves, 'size' | 'sampleRate'> | null }>) => {
+      this.reports.noise = e.data.reduction
+      this.reports.noiseLearning = e.data.learning
+      if (e.data.curves) this.curves = { ...e.data.curves, size: noiseSize, sampleRate: ctx.sampleRate }
+      const learned = e.data.learned
+      if (learned) this.profileListeners.forEach((l) => l(learned))
+    }
+    meter.port.onmessage = (e: MessageEvent<ProcessorLoudness>) => {
+      this.loud = e.data
     }
     limiter.port.onmessage = (e: MessageEvent<{ gr: number }>) => {
       this.reports.lim = e.data.gr
     }
-    return { ctx, stream, inGain, phase, inMeter, gate, eq, dynamics, limiter, wet, dry, outGain, outMeter, mute, inSpectrum, outSpectrum, outStream, monitor }
+    return { ctx, stream, inGain, phase, inMeter, noise, noiseSize, meter, gate, eq, dynamics, limiter, wet, dry, outGain, outMeter, mute, inSpectrum, outSpectrum, outStream, monitor }
   }
 
   private applyParams(cfg: ProcessorConfig): void {
@@ -267,8 +329,9 @@ class ProcessorEngine {
     }
     set(g.inGain.gain, Math.pow(10, cfg.inputGainDb / 20))
     set(g.phase.gain, cfg.phaseInvert ? -1 : 1)
+    g.noise.port.postMessage({ type: 'params', params: cfg.noise })
     g.gate.port.postMessage(cfg.gate)
-    g.dynamics.port.postMessage({ deesser: cfg.deesser, comp1: cfg.comp1, comp2: cfg.comp2 })
+    g.dynamics.port.postMessage({ deesser: cfg.deesser, comp1: cfg.comp1, comp2: cfg.comp2, saturation: cfg.saturation })
     g.limiter.port.postMessage(cfg.limiter)
     for (let b = 0; b < MAX_BANDS; b++) {
       const band = cfg.eq.bands[b]
@@ -314,7 +377,50 @@ class ProcessorEngine {
     const i = this.level(g.inMeter)
     const o = this.level(g.outMeter)
     const r = this.reports
-    return { inPeak: i.peak, inRms: i.rms, outPeak: o.peak, outRms: o.rms, gateOpen: r.gateOpen, gateDb: r.gateDb, deessGr: r.deess, comp1Gr: r.comp1, comp2Gr: r.comp2, limGr: r.lim }
+    return {
+      inPeak: i.peak,
+      inRms: i.rms,
+      outPeak: o.peak,
+      outRms: o.rms,
+      gateOpen: r.gateOpen,
+      gateDb: r.gateDb,
+      deessGr: r.deess,
+      comp1Gr: r.comp1,
+      comp2Gr: r.comp2,
+      limGr: r.lim,
+      noiseGr: r.noise,
+      noiseLearning: r.noiseLearning,
+      gateLevel: r.gateLevel,
+      comp1In: r.comp1In,
+      comp2In: r.comp2In
+    }
+  }
+
+  /** Output loudness (LUFS) and true peak, null until the first reading */
+  loudness(): ProcessorLoudness | null {
+    return this.g ? this.loud : null
+  }
+
+  resetLoudness(): void {
+    this.g?.meter.port.postMessage({ type: 'reset' })
+  }
+
+  /** Last noise-suppressor frame (gains, noise estimate, input power per bin) */
+  noiseCurves(): NoiseCurves | null {
+    return this.g ? this.curves : null
+  }
+
+  /** Captures the noise profile for `seconds`; the result arrives through onNoiseProfile */
+  learnNoise(seconds: number): boolean {
+    if (!this.g) return false
+    this.g.noise.port.postMessage({ type: 'learn', seconds })
+    this.reports.noiseLearning = true
+    return true
+  }
+
+  onNoiseProfile(l: (profile: number[]) => void): () => void {
+    this.profileListeners.add(l)
+    return () => this.profileListeners.delete(l)
   }
 
   /** Spectrum (dB per bin, PROCESSOR_FFT / 2 bins) entering the EQ or leaving the processor */
@@ -330,6 +436,10 @@ class ProcessorEngine {
   outputStream(): MediaStream | null {
     return this.g?.outStream.stream ?? null
   }
+}
+
+function emptyReports(): { gateOpen: boolean; gateDb: number; gateLevel: number; deess: number; comp1: number; comp2: number; comp1In: number; comp2In: number; lim: number; noise: number; noiseLearning: boolean } {
+  return { gateOpen: true, gateDb: 0, gateLevel: -100, deess: 0, comp1: 0, comp2: 0, comp1In: -100, comp2In: -100, lim: 0, noise: 0, noiseLearning: false }
 }
 
 function analyser(ctx: AudioContext, size: number, smoothing = 0): AnalyserNode {

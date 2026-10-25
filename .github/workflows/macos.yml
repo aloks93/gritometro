@@ -1,5 +1,6 @@
 # macOS builds can't be made on Windows: when a release is published, build that edition on a
-# Mac runner and attach the dmg/zip files to it. vX.Y.Z = party app, studio-vX.Y.Z = Gritómetro Studio.
+# Mac runner and attach the dmg/zip files to it. vX.Y.Z = party app, studio-vX.Y.Z = Gritómetro Studio,
+# procesador-vX.Y.Z = Gritómetro Procesador.
 name: macOS release builds
 
 on:
@@ -8,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to build and attach to (vX.Y.Z or studio-vX.Y.Z)
+        description: Release tag to build and attach to (vX.Y.Z, studio-vX.Y.Z or procesador-vX.Y.Z)
         required: true
 
 permissions:
@@ -36,7 +37,7 @@ jobs:
         run: npm test
 
       - name: Build party edition
-        if: ${{ !startsWith(env.TAG, 'studio-') }}
+        if: ${{ !startsWith(env.TAG, 'studio-') && !startsWith(env.TAG, 'procesador-') }}
         run: npx electron-vite build && npx electron-builder --mac --publish never
 
       - name: Build studio edition
@@ -45,8 +46,14 @@ jobs:
         env:
           GRIT_EDITION: studio
 
+      - name: Build processor edition
+        if: ${{ startsWith(env.TAG, 'procesador-') }}
+        run: node scripts/build-processor.mjs --mac
+        env:
+          GRIT_EDITION: processor
+
       - name: Attach to the release
         run: |
-          dir=dist; case "$TAG" in studio-*) dir=dist-studio;; esac
+          dir=dist; case "$TAG" in studio-*) dir=dist-studio;; procesador-*) dir=dist-procesador;; esac
           ls -la "$dir"
           gh release upload "$TAG" "$dir"/*.dmg "$dir"/*.zip --clobber

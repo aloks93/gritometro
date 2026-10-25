@@ -1,10 +1,11 @@
-import type { CompParams, DeEsserParams, GateParams, LimiterParams } from './dynamics'
+import type { CompParams, DeEsserParams, GateParams, LimiterParams, SaturationParams } from './dynamics'
 import { LOOKAHEAD_MS } from './dynamics'
+import { noiseLatency, type NoiseParams } from './noise'
 import { responseDb, type Biquad } from '../studio/dsp'
 
 // Mic processor ("channel strip" for one microphone), meant to sit between a mic and
-// VoiceMeeter (or any app): input gain → gate → parametric EQ → de-esser → compressor 1
-// → compressor 2 → limiter → output gain. Pure model; the Web Audio graph lives in
+// VoiceMeeter (or any app): input gain → noise reduction → gate → parametric EQ → de-esser
+// → compressor 1 → compressor 2 → saturation → limiter → output gain. Pure model; the Web Audio graph lives in
 // core/audio/ProcessorEngine.ts and the dynamics DSP in ./dynamics.ts.
 
 export type BandType = 'highpass' | 'lowpass' | 'lowshelf' | 'highshelf' | 'peaking' | 'notch' | 'bandpass'
@@ -28,11 +29,13 @@ export interface ProcessorPreset {
 
 /** Everything that shapes the sound (what presets store) */
 export interface ProcessingChain {
+  noise: NoiseParams
   gate: GateParams
   eq: { on: boolean; bands: ParamBand[] }
   deesser: DeEsserParams
   comp1: CompParams
   comp2: CompParams
+  saturation: SaturationParams
   limiter: LimiterParams
 }
 
@@ -101,10 +104,12 @@ export function defaultBands(): ParamBand[] {
   ]
 }
 
-export const gateDefaults = (): GateParams => ({ on: false, mode: 'expander', thresholdDb: -50, hysteresisDb: 4, rangeDb: -30, ratio: 2, attackMs: 1, holdMs: 120, releaseMs: 180 })
-export const deesserDefaults = (): DeEsserParams => ({ on: false, freq: 6500, thresholdDb: -30, rangeDb: -8, mode: 'split', listen: false })
-export const comp1Defaults = (): CompParams => ({ on: false, thresholdDb: -18, ratio: 4, kneeDb: 6, attackMs: 5, releaseMs: 80, makeupDb: 4, mix: 100, detector: 'peak' })
-export const comp2Defaults = (): CompParams => ({ on: false, thresholdDb: -24, ratio: 2, kneeDb: 10, attackMs: 30, releaseMs: 400, makeupDb: 2, mix: 100, detector: 'rms' })
+export const noiseDefaults = (): NoiseParams => ({ on: false, mode: 'adaptive', reductionDb: -18, sensitivityDb: 0, smoothing: 50, fromHz: 0, resolution: 1024, listenRemoved: false, profile: null })
+export const gateDefaults = (): GateParams => ({ on: false, mode: 'expander', thresholdDb: -50, hysteresisDb: 4, rangeDb: -30, ratio: 2, attackMs: 1, holdMs: 120, releaseMs: 180, keyHpfHz: 0, keyLpfHz: 0 })
+export const deesserDefaults = (): DeEsserParams => ({ on: false, freq: 6500, q: 1.4, thresholdDb: -30, ratio: 4, rangeDb: -8, mode: 'split', listen: false })
+export const comp1Defaults = (): CompParams => ({ on: false, thresholdDb: -18, ratio: 4, kneeDb: 6, attackMs: 5, releaseMs: 80, makeupDb: 4, autoMakeup: false, mix: 100, detector: 'peak', scHpfHz: 0 })
+export const comp2Defaults = (): CompParams => ({ on: false, thresholdDb: -24, ratio: 2, kneeDb: 10, attackMs: 30, releaseMs: 400, makeupDb: 2, autoMakeup: false, mix: 100, detector: 'rms', scHpfHz: 0 })
+export const saturationDefaults = (): SaturationParams => ({ on: false, mode: 'tube', driveDb: 6, toneHz: 12000, mix: 35 })
 export const limiterDefaults = (): LimiterParams => ({ on: true, ceilingDb: -1, releaseMs: 60 })
 
 export function defaultProcessor(): ProcessorConfig {
@@ -112,12 +117,14 @@ export function defaultProcessor(): ProcessorConfig {
     input: { deviceId: null, channel: 0 },
     inputGainDb: 0,
     phaseInvert: false,
+    noise: noiseDefaults(),
     gate: gateDefaults(),
     eq: { on: true, bands: defaultBands() },
     eqPosition: 'pre',
     deesser: deesserDefaults(),
     comp1: comp1Defaults(),
     comp2: comp2Defaults(),
+    saturation: saturationDefaults(),
     limiter: limiterDefaults(),
     outputGainDb: 0,
     output: { deviceId: null, mute: false },
@@ -142,12 +149,17 @@ function normalizeBand(b: Partial<ParamBand> | undefined, d: ParamBand): ParamBa
 
 export function normalizeChain(c: Partial<ProcessingChain> | undefined, base: ProcessingChain = defaultProcessor()): ProcessingChain {
   const bands = Array.isArray(c?.eq?.bands) && c.eq.bands.length ? c.eq.bands.slice(0, MAX_BANDS).map((b, i) => normalizeBand(b, base.eq.bands[i] ?? band('peaking', 1000))) : base.eq.bands
+  const noise = { ...base.noise, ...c?.noise }
+  if (![512, 1024, 2048].includes(noise.resolution)) noise.resolution = 1024
+  if (!Array.isArray(noise.profile)) noise.profile = null
   return {
+    noise,
     gate: { ...base.gate, ...c?.gate },
     eq: { on: c?.eq?.on ?? base.eq.on, bands },
     deesser: { ...base.deesser, ...c?.deesser },
     comp1: { ...base.comp1, ...c?.comp1 },
     comp2: { ...base.comp2, ...c?.comp2 },
+    saturation: { ...base.saturation, ...c?.saturation },
     limiter: { ...base.limiter, ...c?.limiter }
   }
 }
@@ -171,7 +183,7 @@ export function mergeProcessor(saved: Partial<ProcessorConfig> | null | undefine
 }
 
 export function chainOf(cfg: ProcessingChain): ProcessingChain {
-  return clone({ gate: cfg.gate, eq: cfg.eq, deesser: cfg.deesser, comp1: cfg.comp1, comp2: cfg.comp2, limiter: cfg.limiter })
+  return clone({ noise: cfg.noise, gate: cfg.gate, eq: cfg.eq, deesser: cfg.deesser, comp1: cfg.comp1, comp2: cfg.comp2, saturation: cfg.saturation, limiter: cfg.limiter })
 }
 
 // ---- EQ: Web Audio filter settings and their exact response
@@ -331,8 +343,10 @@ export function buildPreset(useId: string, micId: string): ProcessingChain {
   const set = (i: number, p: Partial<ParamBand>): void => {
     bands[i] = { ...bands[i], ...p }
   }
+  const noise = noiseDefaults()
   const gate = gateDefaults()
   const deesser = deesserDefaults()
+  const saturation = saturationDefaults()
   const comp1 = comp1Defaults()
   const comp2 = comp2Defaults()
   const limiter = limiterDefaults()
@@ -352,7 +366,8 @@ export function buildPreset(useId: string, micId: string): ProcessingChain {
       set(2, { gainDb: -3, freq: 280 })
       set(4, { gainDb: 3.5, freq: 3800 })
       set(6, { gainDb: 2, freq: 11000 })
-      Object.assign(gate, { on: true, mode: 'gate', thresholdDb: -45, hysteresisDb: 6, rangeDb: -40, holdMs: 200, releaseMs: 150 })
+      Object.assign(gate, { on: true, mode: 'gate', thresholdDb: -45, hysteresisDb: 6, rangeDb: -40, holdMs: 200, releaseMs: 150, keyHpfHz: 120 })
+      Object.assign(noise, { on: true, reductionDb: -15 })
       Object.assign(comp1, { on: true, thresholdDb: -22, ratio: 4, attackMs: 4, releaseMs: 80, makeupDb: 6 })
       Object.assign(comp2, { on: true, thresholdDb: -26, ratio: 2, makeupDb: 2 })
       Object.assign(deesser, { on: true, thresholdDb: -32, rangeDb: -8 })
@@ -365,7 +380,9 @@ export function buildPreset(useId: string, micId: string): ProcessingChain {
       set(4, { gainDb: 3, freq: 4000 })
       set(6, { gainDb: 2.5, freq: 12000 })
       Object.assign(gate, { on: true, mode: 'expander', thresholdDb: -48, ratio: 2.5, rangeDb: -25 })
-      Object.assign(comp1, { on: true, thresholdDb: -16, ratio: 6, kneeDb: 4, attackMs: 3, releaseMs: 60, makeupDb: 4 })
+      Object.assign(comp1, { on: true, thresholdDb: -16, ratio: 6, kneeDb: 4, attackMs: 3, releaseMs: 60, makeupDb: 4, scHpfHz: 100 })
+      Object.assign(noise, { on: true, reductionDb: -12, smoothing: 65 })
+      Object.assign(saturation, { on: true, mode: 'tube', driveDb: 6, mix: 25 })
       Object.assign(comp2, { on: true, thresholdDb: -24, ratio: 2.5, attackMs: 40, releaseMs: 500, makeupDb: 4 })
       Object.assign(deesser, { on: true, thresholdDb: -32, rangeDb: -8 })
       break
@@ -376,6 +393,7 @@ export function buildPreset(useId: string, micId: string): ProcessingChain {
       set(6, { gainDb: 3, freq: 12000 })
       Object.assign(comp1, { on: true, thresholdDb: -18, ratio: 2.5, kneeDb: 10, attackMs: 15, releaseMs: 200, makeupDb: 3 })
       Object.assign(comp2, { on: true, thresholdDb: -22, ratio: 1.8, makeupDb: 1.5 })
+      Object.assign(saturation, { on: true, mode: 'tape', driveDb: 4, mix: 20, toneHz: 14000 })
       Object.assign(deesser, { on: true, thresholdDb: -28, rangeDb: -6 })
       break
     case 'shout':
@@ -411,6 +429,8 @@ export function buildPreset(useId: string, micId: string): ProcessingChain {
       set(4, { gainDb: bands[4].gainDb + 1 })
       gate.on = useId !== 'singing' && useId !== 'clean'
       gate.thresholdDb += 4
+      // USB mics are usually noisy: suppression on unless the sound must stay untouched
+      if (useId !== 'clean') Object.assign(noise, { on: true, reductionDb: Math.min(noise.reductionDb, -15) })
       break
     case 'headset':
       set(0, { freq: Math.max(bands[0].freq, 130) })
@@ -426,7 +446,7 @@ export function buildPreset(useId: string, micId: string): ProcessingChain {
       break
   }
   for (const b of bands) b.gainDb = Math.round(b.gainDb * 10) / 10
-  return { gate, eq: { on: true, bands }, deesser, comp1, comp2, limiter }
+  return { noise, gate, eq: { on: true, bands }, deesser, comp1, comp2, saturation, limiter }
 }
 
 export function applyChain(cfg: ProcessorConfig, chain: ProcessingChain): ProcessorConfig {
@@ -494,6 +514,9 @@ export function autoSetup(cfg: ProcessorConfig, m: VoiceMeasurement): AutoSetupR
   const gate: GateParams = { ...cfg.gate, on: snr >= 10, thresholdDb: thr }
   if (snr < 10) notes.push('Voz y ruido demasiado cerca: la puerta queda apagada para no cortar palabras.')
 
+  // A noisy room gets the suppressor; a quiet one keeps the voice untouched
+  const noiseP = snr < 30 ? { ...cfg.noise, on: true, reductionDb: snr < 18 ? -20 : -12 } : cfg.noise
+  if (snr < 30) notes.push('Reducción de ruido activada.')
   const comp1: CompParams = { ...cfg.comp1, on: true, thresholdDb: Math.round(speech + 4) }
   const comp2: CompParams = { ...cfg.comp2, thresholdDb: Math.round(speech - 2) }
   const deesser: DeEsserParams = { ...cfg.deesser, thresholdDb: Math.round(speech - 6) }
@@ -522,7 +545,7 @@ export function autoSetup(cfg: ProcessorConfig, m: VoiceMeasurement): AutoSetupR
     eq = { ...cfg.eq, on: true, bands }
   }
   notes.unshift(`Ganancia ${gain} dB · ruido ${noise.toFixed(0)} dBFS · voz ${speech.toFixed(0)} dBFS`)
-  return { patch: { inputGainDb: gain, gate, comp1, comp2, deesser, eq }, notes }
+  return { patch: { inputGainDb: gain, noise: noiseP, gate, comp1, comp2, deesser, eq }, notes }
 }
 
 // ---- Routing checks
@@ -543,14 +566,17 @@ export function processorWarnings(cfg: ProcessorConfig, outputLabel: string | nu
   if (cfg.bypass) w.push({ level: 'warn', message: 'Bypass activo: sale el micrófono sin procesar.' })
   if (cfg.output.mute) w.push({ level: 'bad', message: 'La salida está silenciada.' })
   if (cfg.deesser.on && cfg.deesser.listen) w.push({ level: 'bad', message: 'De-esser en modo escucha: solo sale la banda de sibilancia.' })
+  if (cfg.noise.on && cfg.noise.listenRemoved) w.push({ level: 'bad', message: 'Reducción de ruido en modo escucha: solo sale el ruido eliminado.' })
+  if (cfg.noise.on && cfg.noise.mode === 'learned' && !cfg.noise.profile)
+    w.push({ level: 'warn', message: 'Reducción de ruido sin perfil aprendido: usa «Aprender» en silencio (mientras, se adapta sola).' })
   const boost = cfg.inputGainDb + cfg.outputGainDb + (cfg.comp1.on ? cfg.comp1.makeupDb : 0) + (cfg.comp2.on ? cfg.comp2.makeupDb : 0)
   if (boost > 30) w.push({ level: 'warn', message: 'Mucha ganancia digital acumulada: sube mejor el preamplificador.' })
   return w
 }
 
 /** Processing latency added on top of the audio devices', ms */
-export function processingLatencyMs(): number {
-  return LOOKAHEAD_MS
+export function processingLatencyMs(cfg: Pick<ProcessorConfig, 'noise'>, sampleRate = 48000): number {
+  return LOOKAHEAD_MS + (noiseLatency(cfg.noise.resolution) / sampleRate) * 1000
 }
 
 // ---- Files

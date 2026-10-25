@@ -14,6 +14,7 @@ import { ModesScreen } from './ui/screens/ModesScreen'
 import { PlayersScreen } from './ui/screens/PlayersScreen'
 import { RecordsScreen } from './ui/screens/RecordsScreen'
 import { SettingsScreen } from './ui/screens/SettingsScreen'
+import { ProcessorShell } from './ui/studio/ProcessorShell'
 import { StudioShell } from './ui/studio/StudioShell'
 import { UnlockScreen } from './ui/studio/UnlockScreen'
 import { ScreenErrorBoundary } from './ui/components/ScreenErrorBoundary'
@@ -31,11 +32,12 @@ function useThemeVars(theme: Theme): void {
 }
 
 /** Keeps the microphone open with the active profile; restarts when relevant settings change */
-function useAudioBoot(audio: AudioSettings): void {
+function useAudioBoot(audio: AudioSettings, enabled = true): void {
   const { noiseFloorDb: _floor, name: _name, ...relevant } = effectiveProfile(audio)
   const key = JSON.stringify(relevant)
 
   useEffect(() => {
+    if (!enabled) return
     // Debounced so dragging a gain slider doesn't reopen the device 60 times
     const t = setTimeout(() => audioEngine.start(effectiveProfile(audio)), 300)
     return () => clearTimeout(t)
@@ -60,7 +62,8 @@ function Shell(): JSX.Element {
   const { data, theme, update } = useStore()
   const [route, setRoute] = useState<Route>({ name: 'home' })
   useThemeVars(theme)
-  useAudioBoot(data.audio)
+  // The processor edition opens its own microphone; the scream meter's input stays closed
+  useAudioBoot(data.audio, __EDITION__ !== 'processor')
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -80,10 +83,11 @@ function Shell(): JSX.Element {
 
   const { birthdayName } = data.settings
   useEffect(() => {
-    if (__EDITION__ === 'studio') return
+    if (__EDITION__ !== 'party') return
     document.title = birthdayName ? `${theme.texts.appTitle} · ${birthdayName}` : theme.texts.appTitle
   }, [theme.texts.appTitle, birthdayName])
 
+  if (__EDITION__ === 'processor') return <ProcessorShell />
   if (__EDITION__ === 'studio') return data.settings.studioUnlocked ? <StudioShell standalone /> : <UnlockScreen />
   if (data.settings.appMode === 'studio') return <StudioShell />
 
