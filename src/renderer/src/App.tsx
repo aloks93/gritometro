@@ -7,7 +7,6 @@ import type { Route } from './ui/nav'
 import { api } from './ui/storage'
 import { StoreProvider, useStore } from './ui/store'
 import { AudioScreen } from './ui/screens/AudioScreen'
-import { CakeScreen } from './ui/screens/CakeScreen'
 import { CustomizeScreen } from './ui/screens/CustomizeScreen'
 import { GameScreen } from './ui/screens/GameScreen'
 import { HomeScreen } from './ui/screens/HomeScreen'
@@ -107,9 +106,6 @@ function Shell(): JSX.Element {
       break
     case 'settings':
       screen = <SettingsScreen navigate={navigate} />
-      break
-    case 'cake':
-      screen = <CakeScreen navigate={navigate} />
       break
     default:
       screen = <HomeScreen navigate={navigate} />

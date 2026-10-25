@@ -6,7 +6,7 @@ import { scoreScream, SilenceWatcher, SustainWatcher, type ScoreResult } from '.
 import { normalizeLevel } from '../../core/audio/LevelAnalyzer'
 import { getMode } from '../../core/game/registry'
 import type { Standing, Turn, TurnKind } from '../../core/game/GameMode'
-import { handicapFor, isBirthdayPlayer, newId, type Player } from '../../core/players/players'
+import { handicapFor, newId, type Player } from '../../core/players/players'
 import { levelLabel } from '../../themes/Theme'
 import { Meter, Reveal } from '../components/Meter'
 import { MonsterAvatar } from '../components/MonsterAvatar'
@@ -255,10 +255,7 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
               <MonsterAvatar player={player} size={settings.projectorMode ? 120 : 96} />
               <div>
                 {turn?.label && <div className="muted">{turn.label}</div>}
-                <div className="turn-name">
-                  {isBirthdayPlayer(player, settings.birthdayName) && <span className="crown">👑</span>}
-                  {player.name}
-                </div>
+                <div className="turn-name">{player.name}</div>
                 {team && <div className="turn-team">{team.name}</div>}
                 {multiplier !== 1 && turn?.kind === 'scream' && <div className="chip">Bonus x{multiplier} por edad</div>}
               </div>
@@ -385,10 +382,7 @@ function Podium({
           s ? (
             <div key={s.id} className={`podium-step place-${i === 1 ? 1 : i === 0 ? 2 : 3}`} style={s.color ? { ['--team' as string]: s.color } : undefined}>
               {findPlayer(s.id) ? <MonsterAvatar player={findPlayer(s.id)!} size={i === 1 ? 150 : 100} /> : <div className="team-dot" />}
-              <strong>
-                {findPlayer(s.id) && isBirthdayPlayer(findPlayer(s.id)!, data.settings.birthdayName) && <span className="crown">👑</span>}
-                {s.name}
-              </strong>
+              <strong>{s.name}</strong>
               <span>{s.display}</span>
               <div className="podium-block">{i === 1 ? 1 : i === 0 ? 2 : 3}</div>
             </div>

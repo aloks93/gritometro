@@ -1,12 +1,12 @@
 # Gritómetro
 
-Electron desktop app that measures who screams loudest into a microphone (one mic, turn-based). Built for a kids' birthday party: themed UIs (default: "Fábrica de Monstruos"), several challenge modes, records, certificates, birthday name (Ajustes → Cumpleañera) with a crown for the birthday player and a "Soplar las velas" cake screen (blow into the mic; hold SPACE as fallback). UI text is Spanish; code and comments are English.
+Electron desktop app that measures who screams loudest into a microphone (one mic, turn-based). Built for a kids' birthday party: themed UIs (default: "Fábrica de Monstruos"), several challenge modes, records, certificates, birthday name (Ajustes → Cumpleañera). UI text is Spanish; code and comments are English.
 
 It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professional audio interface for testing and comparing microphones. Toggle with **Ctrl+Shift+S** or **5 quick clicks on the home title**; exit with the "Salir del modo estudio" button. It is intentionally not listed anywhere in the party UI.
 
 ## Commands
 - `npm run dev` – app with hot reload
-- `npm test` – Vitest (pure logic only: scoring, modes, studio analysis, candles)
+- `npm test` – Vitest (pure logic only: scoring + modes)
 - `npm run typecheck` – `tsc --noEmit`
 - `npm run build:win` – production build + Windows installer and portable `.exe` in `dist/`
 
@@ -18,14 +18,12 @@ src/renderer/src/
   core/            NO React, NO themes. Pure, testable logic.
     audio/         AudioConfig (profiles, simple/advanced), LevelAnalyzer (RMS/dB/ballistics),
                    MicrophoneService (getUserMedia, channel split, gain), AudioEngine (singleton, rAF loop),
-                   Calibration (noise floor), ScoreEngine (scream score + SilenceWatcher + SustainWatcher)
+                   Calibration (noise floor), ScoreEngine (scream score + SilenceWatcher)
     game/          GameMode contract, registry, modes/*
-    players/       players, teams, avatars, age handicap, birthday-player match (crown)
-    party/         birthday extras: candles (blow-out-the-candles state)
+    players/       players, teams, avatars, age handicap
     settings/      game settings + defaults (appMode, birthdayName)
     studio/        mic-comparison analysis (pure): third-octave curve, centroid, band shares,
-                   SNR/crest, A-weighted noise, hum, DC offset, dominant frequency, technicalScore,
-                   loudness matching, WAV encoder; StudioData model
+                   SNR/crest, technicalScore, loudness matching, WAV encoder; StudioData model
   themes/          Theme contract, registry, one folder per theme
   ui/              React: store (persisted app state), hooks, sound, components/, screens/
   ui/studio/       Studio shell (own scoped CSS, does not use party themes): Monitor (meters,

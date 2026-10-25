@@ -15,6 +15,5 @@ export type Route =
   | { name: 'customize' }
   | { name: 'audio' }
   | { name: 'settings' }
-  | { name: 'cake' }
 
 export type Navigate = (route: Route) => void
