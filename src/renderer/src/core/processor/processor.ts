@@ -4,8 +4,8 @@ import { noiseLatency, type NoiseParams } from './noise'
 import type { ChannelSetup } from './channels'
 import { responseDb, type Biquad } from '../studio/dsp'
 
-// Mic processor ("channel strip" for one microphone), meant to sit between a mic and
-// VoiceMeeter (or any app): input gain → noise reduction → gate → parametric EQ → de-esser
+// Mic processor ("channel strip" for one microphone or instrument: bass, guitar, keys…), meant
+// to sit between the source and VoiceMeeter (or any app): input gain → noise reduction → gate → parametric EQ → de-esser
 // → compressor 1 → compressor 2 → saturation → limiter → output gain. Pure model; the Web Audio graph lives in
 // core/audio/ProcessorEngine.ts and the dynamics DSP in ./dynamics.ts.
 
@@ -65,6 +65,8 @@ export interface ProcessorConfig extends ProcessingChain {
   /** Presets picked in the toolbar, remembered for the next session */
   useId: string
   micId: string
+  /** Instrument tuner (Afinador tab) */
+  tuner: { tuning: string; a4: number }
   userPresets: ProcessorPreset[]
   /** Saved setup of every channel that has been worked on (see channels.ts), by channelKey */
   channels: Record<string, ChannelSetup>
@@ -137,6 +139,7 @@ export function defaultProcessor(): ProcessorConfig {
     sampleRate: 48000,
     useId: 'speech',
     micId: 'dynamic',
+    tuner: { tuning: 'chromatic', a4: 440 },
     userPresets: [],
     channels: {}
   }
@@ -179,6 +182,7 @@ export function mergeProcessor(saved: Partial<ProcessorConfig> | null | undefine
     input: { ...d.input, ...saved.input },
     output: { ...d.output, ...saved.output },
     monitor: { ...d.monitor, ...saved.monitor },
+    tuner: { tuning: typeof saved.tuner?.tuning === 'string' ? saved.tuner.tuning : d.tuner.tuning, a4: num(saved.tuner?.a4, d.tuner.a4, 415, 466) },
     eqPosition: saved.eqPosition === 'post' ? 'post' : 'pre',
     inputGainDb: num(saved.inputGainDb, d.inputGainDb, GAIN_MIN, GAIN_MAX),
     outputGainDb: num(saved.outputGainDb, d.outputGainDb, -24, 24),
@@ -333,39 +337,93 @@ export function eqCurve(eq: ProcessingChain['eq'], freqs: number[], sampleRate =
   return freqs.map((f) => (sections.length ? responseDb(sections, f, sampleRate) : 0))
 }
 
-// ---- Presets: use (what the voice is for) × microphone type
+// ---- Presets: use (what the voice or instrument is for) × microphone / pickup
+
+/** What a use is for: a voice, or an instrument (no de-esser or noise suppression, full low end) */
+export type Source = 'voice' | 'instrument'
 
 export interface UsePreset {
   id: string
   name: string
   hint: string
+  source: Source
+  /** Capture picked when switching to this use from one that doesn't fit */
+  defaultMic: string
 }
 
 export const USES: UsePreset[] = [
-  { id: 'speech', name: 'Voz hablada', hint: 'Natural y clara: reuniones, clases, presentaciones.' },
-  { id: 'stream', name: 'Streaming / Discord', hint: 'Presente y constante, sin ruido de teclado entre frases.' },
-  { id: 'podcast', name: 'Podcast / locución', hint: 'Voz de radio: cuerpo, presencia y nivel muy estable.' },
-  { id: 'singing', name: 'Voz cantada', hint: 'Compresión musical, aire arriba y sin cortar las colas.' },
-  { id: 'shout', name: 'Gritos / animación', hint: 'Aguanta gritos sin saturar: mucho margen y limitador firme.' },
-  { id: 'clean', name: 'Limpio (solo protección)', hint: 'Solo paso alto y limitador: el sonido del micro tal cual.' }
+  { id: 'speech', name: 'Voz hablada', hint: 'Natural y clara: reuniones, clases, presentaciones.', source: 'voice', defaultMic: 'dynamic' },
+  { id: 'stream', name: 'Streaming / Discord', hint: 'Presente y constante, sin ruido de teclado entre frases.', source: 'voice', defaultMic: 'dynamic' },
+  { id: 'podcast', name: 'Podcast / locución', hint: 'Voz de radio: cuerpo, presencia y nivel muy estable.', source: 'voice', defaultMic: 'dynamic' },
+  { id: 'singing', name: 'Voz cantada', hint: 'Compresión musical, aire arriba y sin cortar las colas.', source: 'voice', defaultMic: 'condenser' },
+  { id: 'shout', name: 'Gritos / animación', hint: 'Aguanta gritos sin saturar: mucho margen y limitador firme.', source: 'voice', defaultMic: 'dynamic' },
+  { id: 'clean', name: 'Limpio (solo protección)', hint: 'Solo paso alto y limitador: el sonido del micro tal cual.', source: 'voice', defaultMic: 'dynamic' },
+  { id: 'bass-finger', name: 'Bajo eléctrico · dedos', hint: 'Graves firmes y notas parejas: compresión de bajista y sin barro en 250 Hz.', source: 'instrument', defaultMic: 'di' },
+  { id: 'bass-pick', name: 'Bajo eléctrico · púa / rock', hint: 'Ataque de púa y medios que cortan en la mezcla, con un poco de saturación.', source: 'instrument', defaultMic: 'di' },
+  { id: 'bass-slap', name: 'Bajo eléctrico · slap / funk', hint: 'Curva en V: graves profundos y chasquido arriba; compresión rápida para los golpes.', source: 'instrument', defaultMic: 'di' },
+  { id: 'bass-amp', name: 'Bajo · sonido de ampli', hint: 'Bajo directo con carácter de ampli valvular: saturación cálida y agudos redondeados.', source: 'instrument', defaultMic: 'di' },
+  { id: 'bass-upright', name: 'Contrabajo / bajo acústico', hint: 'Madera natural: controla el retumbe y deja las notas largas.', source: 'instrument', defaultMic: 'piezo' },
+  { id: 'guitar-clean', name: 'Guitarra eléctrica · limpia', hint: 'Brillo y definición sin graves que embarren; compresión suave.', source: 'instrument', defaultMic: 'di' },
+  { id: 'guitar-crunch', name: 'Guitarra eléctrica · crunch', hint: 'Saturación de ampli moderada: acordes que rompen un poco y se entienden.', source: 'instrument', defaultMic: 'di' },
+  { id: 'guitar-drive', name: 'Guitarra eléctrica · distorsión', hint: 'Ampli saturado, puerta contra el ruido entre riffs y sin arenilla arriba.', source: 'instrument', defaultMic: 'di' },
+  { id: 'guitar-acoustic', name: 'Guitarra acústica', hint: 'Cuerpo sin retumbe de la boca, brillo de cuerdas y dinámica natural.', source: 'instrument', defaultMic: 'sdc' },
+  { id: 'keys', name: 'Teclado / piano', hint: 'Rango completo intacto, solo control de picos.', source: 'instrument', defaultMic: 'di' },
+  { id: 'percussion', name: 'Cajón / percusión', hint: 'Golpe firme con ataque rápido, sin caja en 400 Hz.', source: 'instrument', defaultMic: 'instrument-dyn' },
+  { id: 'instrument-clean', name: 'Instrumento limpio (solo protección)', hint: 'Solo un paso alto muy bajo y el limitador: el instrumento tal cual.', source: 'instrument', defaultMic: 'di' }
 ]
 
 export interface MicPreset {
   id: string
   name: string
   hint: string
+  /** Which uses it shows up for */
+  fits: Source | 'both'
+  group: 'voice' | 'instrument' | 'direct'
 }
 
 export const MICS: MicPreset[] = [
-  { id: 'dynamic', name: 'Dinámico (SM58, PG48…)', hint: 'Poco brillo y efecto de proximidad: se abre la presencia.' },
-  { id: 'condenser', name: 'Condensador de estudio', hint: 'Capta la sala y brilla: más paso alto, menos agudos duros.' },
-  { id: 'usb', name: 'Micro USB', hint: 'Suele sonar a caja y con ruido: limpia medios y cierra la puerta antes.' },
-  { id: 'headset', name: 'Diadema / headset', hint: 'Muy cerca de la boca: respiraciones y graves de más.' },
-  { id: 'lavalier', name: 'Corbatero (lavalier)', hint: 'Lejos de la boca y apagado: más presencia y aire.' }
+  { id: 'dynamic', name: 'Dinámico (SM58, PG48…)', hint: 'Poco brillo y efecto de proximidad: se abre la presencia.', fits: 'both', group: 'voice' },
+  { id: 'condenser', name: 'Condensador de estudio', hint: 'Capta la sala y brilla: más paso alto, menos agudos duros.', fits: 'both', group: 'voice' },
+  { id: 'usb', name: 'Micro USB', hint: 'Suele sonar a caja y con ruido: limpia medios y cierra la puerta antes.', fits: 'voice', group: 'voice' },
+  { id: 'headset', name: 'Diadema / headset', hint: 'Muy cerca de la boca: respiraciones y graves de más.', fits: 'voice', group: 'voice' },
+  { id: 'lavalier', name: 'Corbatero (lavalier)', hint: 'Lejos de la boca y apagado: más presencia y aire.', fits: 'voice', group: 'voice' },
+  { id: 'shotgun', name: 'Cañón (shotgun)', hint: 'Direccional y fino: se recupera cuerpo y se cuida la sibilancia.', fits: 'voice', group: 'voice' },
+  { id: 'ribbon', name: 'Cinta (ribbon)', hint: 'Oscuro y suave: se abren los agudos y se controla el grave de proximidad.', fits: 'both', group: 'instrument' },
+  { id: 'instrument-dyn', name: 'Dinámico de instrumento (SM57, e609…)', hint: 'Frente al ampli o la caja: medios marcados; se limpia la caja y se da aire.', fits: 'both', group: 'instrument' },
+  { id: 'kick-dyn', name: 'Dinámico de graves (D112, Beta 52…)', hint: 'Para ampli de bajo, bombo o cajón: graves profundos y pico de ataque.', fits: 'instrument', group: 'instrument' },
+  { id: 'sdc', name: 'Condensador lápiz (SM81, KM184…)', hint: 'Detallado y rápido, ideal para acústica: se suaviza el brillo duro.', fits: 'both', group: 'instrument' },
+  { id: 'di', name: 'Línea / DI (pastilla pasiva, directo a la interfaz)', hint: 'Señal limpia y sin sala: todo el grave intacto y puerta suave contra el zumbido.', fits: 'instrument', group: 'direct' },
+  { id: 'active', name: 'Pastillas activas (con batería)', hint: 'Más nivel y más agudos: se suaviza el brillo y la puerta abre más arriba.', fits: 'instrument', group: 'direct' },
+  { id: 'piezo', name: 'Pastilla piezo (acústica, contrabajo)', hint: 'Suena dura y nasal: se quita el graznido de 1–3 kHz y el pico agudo.', fits: 'instrument', group: 'direct' }
 ]
+
+export const MIC_GROUPS: [MicPreset['group'], string][] = [
+  ['voice', 'Micrófonos'],
+  ['instrument', 'Micrófonos de instrumento'],
+  ['direct', 'Directo (sin micrófono)']
+]
+
+export const sourceOf = (useId: string): Source => USES.find((u) => u.id === useId)?.source ?? 'voice'
+export const isInstrument = (useId: string): boolean => sourceOf(useId) === 'instrument'
+
+/** Microphones / pickups that make sense for a use */
+export function micsFor(useId: string): MicPreset[] {
+  const src = sourceOf(useId)
+  return MICS.filter((m) => m.fits === 'both' || m.fits === src)
+}
+
+/**
+ * Switching between two voice uses (or two instrument uses) keeps the mic when it fits;
+ * crossing from voice to instrument or back picks the new use's usual capture
+ */
+export function selectUse(cfg: ProcessorConfig, useId: string): ProcessorConfig {
+  const keep = sourceOf(cfg.useId) === sourceOf(useId) && micsFor(useId).some((m) => m.id === cfg.micId)
+  return { ...cfg, useId, micId: keep ? cfg.micId : (USES.find((u) => u.id === useId)?.defaultMic ?? cfg.micId) }
+}
 
 /** Builds a complete chain for a use and a microphone, starting from a flat EQ */
 export function buildPreset(useId: string, micId: string): ProcessingChain {
+  if (isInstrument(useId)) return buildInstrumentPreset(useId, micId)
   const bands = defaultBands()
   const set = (i: number, p: Partial<ParamBand>): void => {
     bands[i] = { ...bands[i], ...p }
@@ -471,6 +529,236 @@ export function buildPreset(useId: string, micId: string): ProcessingChain {
       set(6, { gainDb: bands[6].gainDb + 3 })
       deesser.thresholdDb -= 2
       break
+    case 'shotgun':
+      // Thin and very directional: some body back, sibilance is exaggerated
+      set(1, { gainDb: bands[1].gainDb + 1.5, freq: 160 })
+      set(5, { gainDb: bands[5].gainDb - 1.5, freq: 7000 })
+      deesser.thresholdDb -= 3
+      gate.thresholdDb -= 2
+      break
+    case 'ribbon':
+      // Dark figure-8: open the top, calm the proximity boom
+      set(1, { gainDb: bands[1].gainDb - 2, freq: 150 })
+      set(6, { gainDb: bands[6].gainDb + 3, freq: 9000 })
+      gate.thresholdDb -= 3
+      break
+    case 'instrument-dyn':
+      // SM57-style: presence peak of its own, a little thin
+      set(1, { gainDb: bands[1].gainDb + 1, freq: 150 })
+      set(5, { gainDb: bands[5].gainDb - 1.5, freq: 6000 })
+      set(6, { gainDb: bands[6].gainDb + 1 })
+      break
+    case 'sdc':
+      set(0, { freq: Math.max(bands[0].freq, 100) })
+      set(5, { gainDb: bands[5].gainDb - 2, freq: 7000 })
+      gate.thresholdDb -= 4
+      deesser.thresholdDb -= 2
+      break
+  }
+  for (const b of bands) b.gainDb = Math.round(b.gainDb * 10) / 10
+  return { noise, gate, eq: { on: true, bands }, deesser, comp1, comp2, saturation, limiter }
+}
+
+/**
+ * Eight bands laid out for an instrument: low cut, lows, low mids, mids, upper mids, highs,
+ * top shelf, top cut. Low cut at 30 Hz so a 5-string bass (B0 ≈ 31 Hz) keeps its fundamental.
+ */
+export function instrumentBands(): ParamBand[] {
+  return [
+    band('highpass', 30, 0, 0.71, true, 24),
+    band('lowshelf', 100, 0),
+    band('peaking', 250, 0, 1.2),
+    band('peaking', 800, 0, 1.2),
+    band('peaking', 2500, 0, 1),
+    band('peaking', 5000, 0, 1.5),
+    band('highshelf', 8000, 0),
+    band('lowpass', 16000, 0, 0.71, false, 12)
+  ]
+}
+
+function buildInstrumentPreset(useId: string, micId: string): ProcessingChain {
+  const bands = instrumentBands()
+  const set = (i: number, p: Partial<ParamBand>): void => {
+    bands[i] = { ...bands[i], ...p }
+  }
+  const add = (i: number, db: number): void => set(i, { gainDb: bands[i].gainDb + db })
+  // Instruments ring out: no spectral suppression (it eats sustain) and no de-esser
+  const noise = noiseDefaults()
+  const deesser = deesserDefaults()
+  // Expander instead of a hard gate so note tails fade instead of chopping
+  const gate: GateParams = { ...gateDefaults(), on: true, mode: 'expander', thresholdDb: -62, ratio: 1.6, rangeDb: -15, attackMs: 0.5, holdMs: 150, releaseMs: 300 }
+  const saturation = saturationDefaults()
+  const comp1 = comp1Defaults()
+  const comp2 = comp2Defaults()
+  const limiter = limiterDefaults()
+  const bass = useId.startsWith('bass')
+
+  switch (useId) {
+    case 'bass-finger':
+      set(0, { freq: 32 })
+      set(1, { gainDb: 2, freq: 80 })
+      set(2, { gainDb: -3, freq: 250 })
+      set(3, { gainDb: 1.5, freq: 800, q: 1 })
+      set(4, { gainDb: 1.5, freq: 2000 })
+      set(6, { gainDb: -2, freq: 7000 })
+      set(7, { on: true, freq: 12000 })
+      // Slow attack lets the pluck through; the leveler evens out the strings
+      Object.assign(comp1, { on: true, thresholdDb: -20, ratio: 4, kneeDb: 6, attackMs: 15, releaseMs: 150, makeupDb: 4 })
+      Object.assign(comp2, { on: true, thresholdDb: -24, ratio: 2.5, kneeDb: 8, attackMs: 30, releaseMs: 300, makeupDb: 2 })
+      Object.assign(saturation, { on: true, mode: 'tube', driveDb: 4, mix: 20, toneHz: 8000 })
+      break
+    case 'bass-pick':
+      set(0, { freq: 35 })
+      set(1, { gainDb: 1.5, freq: 90 })
+      set(2, { gainDb: -2.5, freq: 300 })
+      set(3, { gainDb: 2, freq: 800 })
+      set(4, { gainDb: 2.5, freq: 1800, q: 1.2 })
+      set(6, { gainDb: -1, freq: 7000 })
+      set(7, { on: true, freq: 10000 })
+      Object.assign(comp1, { on: true, thresholdDb: -22, ratio: 5, kneeDb: 4, attackMs: 5, releaseMs: 100, makeupDb: 5 })
+      Object.assign(comp2, { on: true, thresholdDb: -24, ratio: 2, makeupDb: 1.5 })
+      Object.assign(saturation, { on: true, mode: 'tube', driveDb: 9, mix: 35, toneHz: 7000 })
+      break
+    case 'bass-slap':
+      set(0, { freq: 32 })
+      set(1, { gainDb: 3, freq: 70 })
+      set(2, { gainDb: -2, freq: 250 })
+      set(3, { gainDb: -3, freq: 550, q: 1 })
+      set(4, { gainDb: 2, freq: 2500 })
+      set(5, { gainDb: 3, freq: 4500, q: 1.2 })
+      set(6, { gainDb: 1.5, freq: 9000 })
+      // Fast attack catches the pops before the limiter has to
+      Object.assign(comp1, { on: true, thresholdDb: -18, ratio: 6, kneeDb: 3, attackMs: 1, releaseMs: 60, makeupDb: 4 })
+      Object.assign(comp2, { on: true, thresholdDb: -24, ratio: 2, makeupDb: 1.5 })
+      Object.assign(limiter, { releaseMs: 40 })
+      break
+    case 'bass-amp':
+      set(0, { freq: 35 })
+      set(1, { gainDb: 2.5, freq: 90 })
+      set(2, { gainDb: -1.5, freq: 300 })
+      set(3, { gainDb: 2.5, freq: 700, q: 0.9 })
+      set(4, { gainDb: -1, freq: 2500 })
+      set(6, { gainDb: -4, freq: 5000 })
+      set(7, { on: true, freq: 6000, slope: 24 })
+      Object.assign(comp1, { on: true, thresholdDb: -20, ratio: 4, attackMs: 10, releaseMs: 150, makeupDb: 3 })
+      Object.assign(saturation, { on: true, mode: 'amp', driveDb: 10, mix: 45, toneHz: 5000 })
+      break
+    case 'bass-upright':
+      set(0, { freq: 38 })
+      set(2, { gainDb: -3, freq: 180, q: 1.5 })
+      set(3, { gainDb: -1.5, freq: 700 })
+      set(4, { gainDb: 1.5, freq: 1500 })
+      set(6, { gainDb: -2, freq: 7000 })
+      Object.assign(comp1, { on: true, thresholdDb: -22, ratio: 3, kneeDb: 8, attackMs: 20, releaseMs: 200, makeupDb: 3 })
+      break
+    case 'guitar-clean':
+      set(0, { freq: 85 })
+      set(1, { gainDb: -1, freq: 150 })
+      set(2, { gainDb: -2, freq: 300 })
+      set(4, { gainDb: 2, freq: 3000 })
+      set(6, { gainDb: 2, freq: 9000 })
+      Object.assign(comp1, { on: true, thresholdDb: -22, ratio: 3, kneeDb: 8, attackMs: 10, releaseMs: 150, makeupDb: 3 })
+      Object.assign(saturation, { on: true, mode: 'tape', driveDb: 3, mix: 15, toneHz: 12000 })
+      break
+    case 'guitar-crunch':
+      set(0, { freq: 90 })
+      set(2, { gainDb: -2, freq: 250 })
+      set(3, { gainDb: 2, freq: 900, q: 1 })
+      set(5, { gainDb: -2, freq: 6000, q: 2 })
+      set(6, { gainDb: -1.5, freq: 9000 })
+      set(7, { on: true, freq: 10000 })
+      Object.assign(comp1, { on: true, thresholdDb: -22, ratio: 3, attackMs: 8, releaseMs: 120, makeupDb: 2 })
+      Object.assign(saturation, { on: true, mode: 'amp', driveDb: 12, mix: 80, toneHz: 7000 })
+      break
+    case 'guitar-drive':
+      set(0, { freq: 100 })
+      set(2, { gainDb: -2.5, freq: 250 })
+      set(3, { gainDb: 1.5, freq: 800, q: 1 })
+      set(4, { gainDb: 1, freq: 2500 })
+      set(5, { gainDb: -3, freq: 6500, q: 2 })
+      set(6, { gainDb: -2, freq: 9000 })
+      set(7, { on: true, freq: 8500, slope: 24 })
+      // High gain brings up hum and pickup noise: a real gate between riffs, keyed above the hum
+      Object.assign(gate, { mode: 'gate', thresholdDb: -50, hysteresisDb: 6, rangeDb: -60, attackMs: 0.3, holdMs: 50, releaseMs: 90, keyHpfHz: 200 })
+      Object.assign(comp1, { on: true, thresholdDb: -20, ratio: 3, attackMs: 10, releaseMs: 100, makeupDb: 0 })
+      Object.assign(saturation, { on: true, mode: 'amp', driveDb: 20, mix: 100, toneHz: 6000 })
+      Object.assign(limiter, { ceilingDb: -1.5 })
+      break
+    case 'guitar-acoustic':
+      set(0, { freq: 80 })
+      set(1, { gainDb: -1, freq: 120 })
+      set(2, { gainDb: -3, freq: 200, q: 1.4 })
+      set(3, { gainDb: -1.5, freq: 800 })
+      set(4, { gainDb: 1.5, freq: 3000 })
+      set(6, { gainDb: 2.5, freq: 10000 })
+      Object.assign(comp1, { on: true, thresholdDb: -22, ratio: 3, kneeDb: 8, attackMs: 10, releaseMs: 150, makeupDb: 3 })
+      Object.assign(comp2, { on: true, thresholdDb: -26, ratio: 1.8, makeupDb: 1.5 })
+      Object.assign(gate, { thresholdDb: -58, ratio: 1.8 })
+      break
+    case 'keys':
+      set(0, { freq: 25, slope: 12 })
+      set(2, { gainDb: -1, freq: 300 })
+      set(6, { gainDb: 1, freq: 12000 })
+      gate.on = false
+      Object.assign(comp1, { on: true, thresholdDb: -16, ratio: 2, kneeDb: 10, attackMs: 20, releaseMs: 200, makeupDb: 1 })
+      break
+    case 'percussion':
+      set(0, { freq: 40 })
+      set(1, { gainDb: 3, freq: 80 })
+      set(2, { gainDb: -4, freq: 400 })
+      set(4, { gainDb: 3, freq: 3500 })
+      set(6, { gainDb: 1, freq: 10000 })
+      Object.assign(gate, { mode: 'gate', thresholdDb: -40, hysteresisDb: 6, rangeDb: -30, attackMs: 0.2, holdMs: 60, releaseMs: 120 })
+      Object.assign(comp1, { on: true, thresholdDb: -18, ratio: 4, kneeDb: 4, attackMs: 8, releaseMs: 80, makeupDb: 3 })
+      Object.assign(limiter, { releaseMs: 40 })
+      break
+    default:
+      // instrument-clean: very low cut + protection
+      set(0, { freq: 25, slope: 12 })
+      gate.on = false
+      break
+  }
+
+  switch (micId) {
+    case 'di':
+      // Clean line signal: the expander only needs to catch the hum floor
+      gate.thresholdDb -= 4
+      break
+    case 'active':
+      // Hotter and brighter than passive pickups
+      add(6, -1.5)
+      gate.thresholdDb += 4
+      break
+    case 'piezo':
+      // Quack and a spiky top
+      set(5, { gainDb: bands[5].gainDb - 3, freq: bass ? 1200 : 2500, q: 1.5 })
+      add(6, -1.5)
+      set(7, { on: true, freq: Math.min(bands[7].on ? bands[7].freq : 20000, 10000) })
+      break
+    case 'dynamic':
+    case 'instrument-dyn':
+      // In front of the amp or skin: some boxiness, a little short on air
+      add(3, -1.5)
+      add(6, 1.5)
+      gate.thresholdDb += 6
+      break
+    case 'kick-dyn':
+      add(1, 1.5)
+      add(3, -2)
+      gate.thresholdDb += 6
+      break
+    case 'condenser':
+    case 'sdc':
+      // Detailed and picks up the room
+      set(0, { freq: Math.max(bands[0].freq, bass ? 35 : 70) })
+      add(5, -1.5)
+      gate.thresholdDb += 4
+      break
+    case 'ribbon':
+      add(1, -1.5)
+      add(6, 2.5)
+      gate.thresholdDb += 4
+      break
   }
   for (const b of bands) b.gainDb = Math.round(b.gainDb * 10) / 10
   return { noise, gate, eq: { on: true, bands }, deesser, comp1, comp2, saturation, limiter }
@@ -527,29 +815,35 @@ export const VOICE_REGIONS: Record<keyof typeof VOICE_TARGET, [number, number]> 
  */
 export function autoSetup(cfg: ProcessorConfig, m: VoiceMeasurement): AutoSetupResult {
   const notes: string[] = []
-  if (m.peakDb <= -70 || m.speechDb <= -80) return { patch: {}, notes: ['No se oyó la voz: revisa el micrófono y repite.'] }
+  const inst = isInstrument(cfg.useId)
+  if (m.peakDb <= -70 || m.speechDb <= -80)
+    return { patch: {}, notes: [inst ? 'No se oyó el instrumento: revisa el cable y su volumen, y repite.' : 'No se oyó la voz: revisa el micrófono y repite.'] }
   const gain = Math.round(Math.max(GAIN_MIN, Math.min(GAIN_MAX, cfg.inputGainDb - 12 - m.peakDb)) * 2) / 2
   const delta = gain - cfg.inputGainDb
   const noise = m.noiseDb + delta
   const speech = m.speechDb + delta
   const snr = speech - noise
   if (gain >= GAIN_MAX) notes.push('Ganancia digital al máximo: sube el preamplificador del micrófono o de la interfaz.')
-  if (snr < 15) notes.push('Mucho ruido de fondo para la voz: acércate al micro o baja el ruido de la sala.')
+  if (snr < 15)
+    notes.push(inst ? 'Mucho ruido para el instrumento: revisa cables y masa, y aléjalo del monitor y del PC.' : 'Mucho ruido de fondo para la voz: acércate al micro o baja el ruido de la sala.')
 
-  // Gate a third of the way from the noise to the voice, never closer than 6 dB to either
-  const thr = Math.round(Math.min(speech - 8, Math.max(noise + 6, noise + snr / 3)))
+  // Gate a third of the way from the noise to the voice, never closer than 6 dB to either.
+  // Instruments decay slowly: a quarter of the way, so note tails survive
+  const thr = Math.round(Math.min(speech - 8, Math.max(noise + 6, noise + snr / (inst ? 4 : 3))))
   const gate: GateParams = { ...cfg.gate, on: snr >= 10, thresholdDb: thr }
-  if (snr < 10) notes.push('Voz y ruido demasiado cerca: la puerta queda apagada para no cortar palabras.')
+  if (snr < 10) notes.push(inst ? 'Instrumento y ruido demasiado cerca: la puerta queda apagada para no cortar notas.' : 'Voz y ruido demasiado cerca: la puerta queda apagada para no cortar palabras.')
 
-  // A noisy room gets the suppressor; a quiet one keeps the voice untouched
-  const noiseP = snr < 30 ? { ...cfg.noise, on: true, reductionDb: snr < 18 ? -20 : -12 } : cfg.noise
-  if (snr < 30) notes.push('Reducción de ruido activada.')
+  // A noisy room gets the suppressor; a quiet one keeps the voice untouched. Never for
+  // instruments: it smears sustain and chords (the gate handles hum between notes)
+  const noiseP = !inst && snr < 30 ? { ...cfg.noise, on: true, reductionDb: snr < 18 ? -20 : -12 } : cfg.noise
+  if (!inst && snr < 30) notes.push('Reducción de ruido activada.')
   const comp1: CompParams = { ...cfg.comp1, on: true, thresholdDb: Math.round(speech + 4) }
   const comp2: CompParams = { ...cfg.comp2, thresholdDb: Math.round(speech - 2) }
   const deesser: DeEsserParams = { ...cfg.deesser, thresholdDb: Math.round(speech - 6) }
 
   let eq = cfg.eq
-  if (m.regions) {
+  // The EQ target is a voice spectrum: instruments keep their preset's EQ
+  if (m.regions && !inst) {
     const r = m.regions
     const rel = (v: number): number => v - r.presence
     const fix = (diff: number, max: number): number => Math.round(Math.max(-max, Math.min(max, -diff * 0.6)) * 2) / 2
@@ -571,7 +865,8 @@ export function autoSetup(cfg: ProcessorConfig, m: VoiceMeasurement): AutoSetupR
     nudge(6, 'highshelf', 10000, corr.air, 'Aire')
     eq = { ...cfg.eq, on: true, bands }
   }
-  notes.unshift(`Ganancia ${gain} dB · ruido ${noise.toFixed(0)} dBFS · voz ${speech.toFixed(0)} dBFS`)
+  notes.unshift(`Ganancia ${gain} dB · ruido ${noise.toFixed(0)} dBFS · ${inst ? 'instrumento' : 'voz'} ${speech.toFixed(0)} dBFS`)
+  if (inst) return { patch: { inputGainDb: gain, gate, comp1, comp2 }, notes }
   return { patch: { inputGainDb: gain, noise: noiseP, gate, comp1, comp2, deesser, eq }, notes }
 }
 
@@ -596,6 +891,8 @@ export function processorWarnings(cfg: ProcessorConfig, outputLabel: string | nu
   if (cfg.noise.on && cfg.noise.listenRemoved) w.push({ level: 'bad', message: 'Reducción de ruido en modo escucha: solo sale el ruido eliminado.' })
   if (cfg.noise.on && cfg.noise.mode === 'learned' && !cfg.noise.profile)
     w.push({ level: 'warn', message: 'Reducción de ruido sin perfil aprendido: usa «Aprender» en silencio (mientras, se adapta sola).' })
+  if (isInstrument(cfg.useId) && cfg.noise.on)
+    w.push({ level: 'warn', message: 'Reducción de ruido con un instrumento: recorta las colas de las notas y suma latencia. Para el zumbido usa la puerta.' })
   const boost = cfg.inputGainDb + cfg.outputGainDb + (cfg.comp1.on ? cfg.comp1.makeupDb : 0) + (cfg.comp2.on ? cfg.comp2.makeupDb : 0)
   if (boost > 30) w.push({ level: 'warn', message: 'Mucha ganancia digital acumulada: sube mejor el preamplificador.' })
   return w

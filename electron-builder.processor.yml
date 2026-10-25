@@ -3,7 +3,7 @@ appId: com.gritometro.procesador
 productName: Gritometro Procesador
 extraMetadata:
   name: gritometro-procesador
-  description: Gritómetro Procesador - procesador vocal para micrófonos (reducción de ruido, EQ, dinámica) con salida a VoiceMeeter.
+  description: Gritómetro Procesador - procesador para micrófonos e instrumentos (reducción de ruido, EQ, dinámica, saturación de ampli, afinador) con salida a VoiceMeeter.
 directories:
   buildResources: build/processor
   output: dist-procesador

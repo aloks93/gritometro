@@ -82,7 +82,8 @@ function translateCore(t: string, depth: number): string {
 
 // ---- DOM translation
 
-const ATTRS = ['title', 'placeholder', 'aria-label']
+// 'label' covers <optgroup> headings
+const ATTRS = ['title', 'placeholder', 'aria-label', 'label']
 
 function translateTextNode(n: Node): void {
   const parent = n.parentNode as Element | null

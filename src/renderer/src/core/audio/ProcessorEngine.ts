@@ -75,6 +75,8 @@ interface Graph {
   inGain: GainNode
   phase: GainNode
   inMeter: AnalyserNode
+  /** Raw input for the instrument tuner (long window: a low B is ≈ 31 Hz) */
+  tuner: AnalyserNode
   noise: AudioWorkletNode
   noiseSize: number
   meter: AudioWorkletNode
@@ -95,6 +97,8 @@ interface Graph {
 
 const TC = 0.015
 export const PROCESSOR_FFT = 8192
+/** Samples the tuner reads per frame */
+export const TUNER_SIZE = 4096
 
 /** Inputs whose change needs the graph rebuilt (everything else is applied live) */
 export function processorStructureKey(cfg: ProcessorConfig): string {
@@ -233,6 +237,7 @@ export class ProcessorEngine {
     }
     const phase = mono(ctx.createGain()) as GainNode
     const inMeter = analyser(ctx, 2048)
+    const tuner = analyser(ctx, TUNER_SIZE)
     const worklet = (name: string): AudioWorkletNode =>
       new AudioWorkletNode(ctx, name, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 1, channelCountMode: 'explicit' })
     const noiseSize = noiseLatency(cfg.noise.resolution)
@@ -264,6 +269,7 @@ export class ProcessorEngine {
 
     inGain.connect(phase)
     phase.connect(inMeter)
+    phase.connect(tuner)
     const dynChain = cfg.eqPosition === 'post' ? [dynamics, ...eq] : [...eq, dynamics]
     chain([phase, noise, gate, ...dynChain, limiter, wet, outGain])
     gate.connect(inSpectrum)
@@ -317,7 +323,7 @@ export class ProcessorEngine {
     limiter.port.onmessage = (e: MessageEvent<{ gr: number }>) => {
       this.reports.lim = e.data.gr
     }
-    return { ctx, stream, inGain, phase, inMeter, noise, noiseSize, meter, gate, eq, dynamics, limiter, wet, dry, outGain, outMeter, mute, inSpectrum, outSpectrum, outStream, monitor }
+    return { ctx, stream, inGain, phase, inMeter, tuner, noise, noiseSize, meter, gate, eq, dynamics, limiter, wet, dry, outGain, outMeter, mute, inSpectrum, outSpectrum, outStream, monitor }
   }
 
   private applyParams(cfg: ProcessorConfig): void {
@@ -429,6 +435,14 @@ export class ProcessorEngine {
     const an = which === 'in' ? g?.inSpectrum : g?.outSpectrum
     if (!an || out.length !== an.frequencyBinCount) return false
     an.getFloatFrequencyData(out)
+    return true
+  }
+
+  /** Latest TUNER_SIZE samples of the input (after gain and phase, before any processing) */
+  tunerWave(out: Float32Array<ArrayBuffer>): boolean {
+    const an = this.g?.tuner
+    if (!an || out.length !== an.fftSize) return false
+    an.getFloatTimeDomainData(out)
     return true
   }
 

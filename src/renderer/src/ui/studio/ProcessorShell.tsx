@@ -78,7 +78,7 @@ function ProcessorBody({ english }: { english: boolean }): JSX.Element {
           <ProcessorMark />
           <div>
             <b>Gritómetro</b>
-            <span>Procesador vocal</span>
+            <span>Voz e instrumentos</span>
           </div>
         </div>
         <Segmented<Page>

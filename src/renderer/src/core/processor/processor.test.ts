@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Compressor, DeEsser, Gate, Limiter, dbToLin, linToDb, lookaheadSamples } from './dynamics'
+import { Compressor, DeEsser, Gate, Limiter, dbToLin, linToDb, lookaheadSamples, saturate } from './dynamics'
 import {
   autoSetup,
   band,
@@ -12,10 +12,12 @@ import {
   gateDefaults,
   IDENTITY,
   MICS,
+  micsFor,
   mergeProcessor,
   parsePreset,
   processorWarnings,
   saveUserPreset,
+  selectUse,
   serializePreset,
   STAGES_PER_BAND,
   USES
@@ -159,6 +161,64 @@ describe('processor config', () => {
     }
     // The mic type changes the EQ
     expect(buildPreset('speech', 'lavalier').eq.bands[4].gainDb).toBeGreaterThan(buildPreset('speech', 'condenser').eq.bands[4].gainDb)
+  })
+
+  it('instrument presets keep the low end, skip voice-only stages and fit their pickups', () => {
+    const inst = USES.filter((u) => u.source === 'instrument')
+    expect(inst.length).toBeGreaterThanOrEqual(10)
+    for (const u of inst) {
+      expect(micsFor(u.id).some((m) => m.id === u.defaultMic), u.id).toBe(true)
+      for (const mic of micsFor(u.id)) {
+        const c = buildPreset(u.id, mic.id)
+        expect(c.noise.on).toBe(false)
+        expect(c.deesser.on).toBe(false)
+        expect(c.limiter.on).toBe(true)
+        expect(c.eq.bands.every((b) => Math.abs(b.gainDb) <= 8 && b.freq >= 20 && b.freq <= 20000)).toBe(true)
+      }
+    }
+    // Bass presets don't cut the low B of a 5-string (≈ 31 Hz) the way a voice low cut would
+    for (const id of ['bass-finger', 'bass-slap', 'bass-pick']) {
+      const c = buildPreset(id, 'di')
+      expect(eqCurve(c.eq, [31], SR)[0]).toBeGreaterThan(-6)
+    }
+    expect(eqCurve(buildPreset('speech', 'dynamic').eq, [31], SR)[0]).toBeLessThan(-20)
+    // Distorted guitar uses the amp saturator and a real gate
+    const drive = buildPreset('guitar-drive', 'di')
+    expect(drive.saturation).toMatchObject({ on: true, mode: 'amp' })
+    expect(drive.gate).toMatchObject({ on: true, mode: 'gate' })
+    // A piezo gets its quack cut
+    expect(buildPreset('guitar-acoustic', 'piezo').eq.bands[5].gainDb).toBeLessThan(buildPreset('guitar-acoustic', 'sdc').eq.bands[5].gainDb)
+    // Voice-only mics aren't offered for instruments, pickups aren't offered for voice
+    expect(micsFor('bass-finger').some((m) => m.id === 'headset')).toBe(false)
+    expect(micsFor('speech').some((m) => m.id === 'di')).toBe(false)
+  })
+
+  it('switching use keeps a mic that fits, and crossing voice ↔ instrument picks the usual capture', () => {
+    const cfg = { ...defaultProcessor(), useId: 'speech', micId: 'headset' }
+    expect(selectUse(cfg, 'bass-finger')).toMatchObject({ useId: 'bass-finger', micId: 'di' })
+    expect(selectUse({ ...cfg, micId: 'dynamic' }, 'guitar-clean').micId).toBe('di')
+    expect(selectUse({ ...cfg, useId: 'guitar-clean', micId: 'instrument-dyn' }, 'bass-pick').micId).toBe('instrument-dyn')
+    expect(selectUse({ ...cfg, useId: 'bass-finger', micId: 'piezo' }, 'podcast').micId).toBe('dynamic')
+  })
+
+  it('auto setup on an instrument sets gain and gate but leaves EQ and noise reduction alone', () => {
+    const cfg = { ...defaultProcessor(), useId: 'bass-finger', micId: 'di' }
+    const r = autoSetup(cfg, { noiseDb: -60, peakDb: -20, speechDb: -38, regions: { low: 40, mud: 30, box: 15, presence: 0, air: -30 } })
+    expect(r.patch.inputGainDb).toBe(8)
+    expect(r.patch.eq).toBeUndefined()
+    expect(r.patch.noise).toBeUndefined()
+    expect(r.patch.deesser).toBeUndefined()
+    // Closer to the noise than for a voice, so note tails survive
+    const voice = autoSetup(defaultProcessor(), { noiseDb: -60, peakDb: -20, speechDb: -38 })
+    expect(r.patch.gate!.thresholdDb).toBeLessThan(voice.patch.gate!.thresholdDb)
+    expect(processorWarnings({ ...cfg, noise: { ...cfg.noise, on: true } }, 'VoiceMeeter Input', null).some((w) => /instrumento/.test(w.message))).toBe(true)
+  })
+
+  it('amp saturation clips harder on the negative side and keeps unity for small signals', () => {
+    const d = dbToLin(20)
+    expect(saturate(0.001, d, 'amp') / 0.001).toBeCloseTo(Math.sqrt(d), 1)
+    expect(Math.abs(saturate(-1, d, 'amp'))).toBeLessThan(Math.abs(saturate(1, d, 'amp')))
+    expect(mergeProcessor({ tuner: { tuning: 'bass5', a4: 1000 } } as never).tuner).toEqual({ tuning: 'bass5', a4: 466 })
   })
 
   it('user presets save, overwrite by name and survive a file round trip', () => {

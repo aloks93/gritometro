@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { processorEngine, PROCESSOR_FFT, type ProcessorLevels, type ProcessorState } from '../../core/audio/ProcessorEngine'
+import { processorEngine, PROCESSOR_FFT, TUNER_SIZE, type ProcessorLevels, type ProcessorState } from '../../core/audio/ProcessorEngine'
 import { listInputs, type InputDevice } from '../../core/audio/MicrophoneService'
 import { autoTrim, logFreqs } from '../../core/mixer/mixer'
 import { autoMakeupDb, saturate, type CompParams } from '../../core/processor/dynamics'
@@ -19,13 +19,17 @@ import {
   hasGain,
   hasQ,
   hasSlope,
+  isInstrument,
   MAX_BANDS,
+  MIC_GROUPS,
   MICS,
+  micsFor,
   nodeBiquad,
   parsePreset,
   processingLatencyMs,
   processorWarnings,
   saveUserPreset,
+  selectUse,
   serializePreset,
   USES,
   VOICE_REGIONS,
@@ -35,14 +39,16 @@ import {
   type ProcessorConfig,
   type VoiceMeasurement
 } from '../../core/processor/processor'
+import { midiName, nearestString, PitchSmoother, TUNINGS, tunerMinHz } from '../../core/processor/tuning'
 import { compressorCurve, responseDb } from '../../core/studio/dsp'
+import { detectPitch, noteInfo } from '../../core/studio/pitch'
 import { openTextFile, saveFile } from '../storage'
 import { useStore } from '../store'
 import { Icon, Knob, Switch, useFrame, useHold, VMeter } from './controls'
 import { fitCanvas, Segmented } from './widgets'
 import './processor.css'
 
-// Mic processor: one microphone → full voice chain → VoiceMeeter (or any output).
+// Mic processor: one microphone or instrument → full chain → VoiceMeeter (or any output).
 // Shared by the studio tab and the standalone "Gritómetro Procesador" edition.
 
 export function useProcessorState(): ProcessorState {
@@ -79,7 +85,7 @@ const COLORS = {
 }
 
 type ModuleId = keyof typeof COLORS
-type GraphTab = 'eq' | 'dynamics' | 'noise'
+type GraphTab = 'eq' | 'dynamics' | 'noise' | 'tuner'
 
 export function ProcessorView({ onOpenChannels }: { onOpenChannels?: () => void }): JSX.Element {
   const [cfg, set] = useProcessor()
@@ -91,6 +97,7 @@ export function ProcessorView({ onOpenChannels }: { onOpenChannels?: () => void 
   const [graph, setGraph] = useState<GraphTab>('eq')
   const [selBand, setSelBand] = useState(0)
   const on = state.status === 'on'
+  const inst = isInstrument(cfg.useId)
 
   useEffect(() => {
     const load = (): void => {
@@ -153,8 +160,8 @@ export function ProcessorView({ onOpenChannels }: { onOpenChannels?: () => void 
     <div className={`vp ${cfg.bypass ? 'bypassed' : ''}`}>
       <header className="vp-head">
         <div className="vp-title">
-          <b>Procesador vocal</b>
-          <span>Reducción de ruido · puerta · EQ paramétrico · de-esser · compresión · saturación · limitador</span>
+          <b>{inst ? 'Procesador de instrumento' : 'Procesador vocal'}</b>
+          <span>{inst ? 'Puerta · EQ paramétrico · compresión · saturación de ampli · limitador · afinador' : 'Reducción de ruido · puerta · EQ paramétrico · de-esser · compresión · saturación · limitador'}</span>
         </div>
         <span className="vp-grow" />
         <div className={`vp-status ${state.status}`}>
@@ -195,6 +202,7 @@ export function ProcessorView({ onOpenChannels }: { onOpenChannels?: () => void 
 
       <IoPanel cfg={cfg} set={set} inputs={inputs} outputs={outputs} channels={on ? (state.channels ?? 1) : 2} />
       <PresetBar cfg={cfg} set={set} on={on} setMsg={setMsg} onAssistant={() => setAssistant(true)} />
+      {inst && <InstrumentTips cfg={cfg} latencyMs={on ? (state.latencyMs ?? null) : null} />}
       {msg && <p className="vp-msg">{msg}</p>}
       {warnings.length > 0 && (
         <ul className="vp-warnings">
@@ -208,7 +216,7 @@ export function ProcessorView({ onOpenChannels }: { onOpenChannels?: () => void 
       )}
 
       <div className="vp-main">
-        <InputColumn cfg={cfg} set={set} on={on} />
+        <InputColumn cfg={cfg} set={set} on={on} inst={inst} />
         <div className="vp-center">
           <SignalFlow cfg={cfg} set={set} on={on} onSelect={focusModule} />
           <section className="vp-panel vp-graph">
@@ -219,7 +227,8 @@ export function ProcessorView({ onOpenChannels }: { onOpenChannels?: () => void 
                 options={[
                   ['eq', 'Ecualizador'],
                   ['dynamics', 'Dinámica'],
-                  ['noise', 'Ruido']
+                  ['noise', 'Ruido'],
+                  ['tuner', 'Afinador']
                 ]}
               />
               <span className="vp-grow" />
@@ -228,6 +237,7 @@ export function ProcessorView({ onOpenChannels }: { onOpenChannels?: () => void 
             {graph === 'eq' && <EqGraph cfg={cfg} set={set} on={on} sel={selBand} setSel={setSelBand} sampleRate={state.sampleRate ?? cfg.sampleRate ?? 48000} />}
             {graph === 'dynamics' && <DynamicsHistory on={on} />}
             {graph === 'noise' && <NoiseGraph on={on} cfg={cfg} />}
+            {graph === 'tuner' && <TunerPanel cfg={cfg} set={set} on={on} />}
           </section>
         </div>
         <OutputColumn cfg={cfg} set={set} on={on} />
@@ -248,6 +258,7 @@ export function ProcessorView({ onOpenChannels }: { onOpenChannels?: () => void 
       {assistant && (
         <Assistant
           cfg={cfg}
+          inst={inst}
           onClose={() => setAssistant(false)}
           onApply={(r) => {
             set(r.patch)
@@ -422,28 +433,49 @@ function PresetBar({ cfg, set, on, setMsg, onAssistant }: { cfg: ProcessorConfig
     <section className="vp-panel vp-presets">
       <label className="vp-field">
         <span>Uso</span>
-        <select value={cfg.useId} onChange={(e) => set({ useId: e.target.value })} title={USES.find((u) => u.id === cfg.useId)?.hint}>
-          {USES.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
-            </option>
+        <select value={cfg.useId} onChange={(e) => set((c) => selectUse(c, e.target.value))} title={USES.find((u) => u.id === cfg.useId)?.hint}>
+          {(
+            [
+              ['voice', 'Voz'],
+              ['instrument', 'Instrumentos']
+            ] as const
+          ).map(([src, label]) => (
+            <optgroup key={src} label={label}>
+              {USES.filter((u) => u.source === src).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </label>
       <label className="vp-field">
-        <span>Tipo de micrófono</span>
+        <span>{isInstrument(cfg.useId) ? 'Micrófono o pastilla' : 'Tipo de micrófono'}</span>
         <select value={cfg.micId} onChange={(e) => set({ micId: e.target.value })} title={MICS.find((m) => m.id === cfg.micId)?.hint}>
-          {MICS.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
+          {MIC_GROUPS.map(([group, label]) => {
+            const list = micsFor(cfg.useId).filter((m) => m.group === group)
+            return list.length ? (
+              <optgroup key={group} label={label}>
+                {list.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null
+          })}
         </select>
       </label>
       <button className="vp-btn primary" onClick={apply} title="Carga una cadena completa pensada para ese uso y ese micrófono">
         Aplicar preset
       </button>
-      <button className="vp-btn" onClick={onAssistant} disabled={!on} title={on ? 'Mide tu voz y el ruido y ajusta ganancia, puerta, compresores y EQ' : 'Enciende el procesador primero'}>
+      <button
+        className="vp-btn"
+        onClick={onAssistant}
+        disabled={!on}
+        title={on ? (isInstrument(cfg.useId) ? 'Mide el instrumento y el ruido y ajusta ganancia, puerta y compresores' : 'Mide tu voz y el ruido y ajusta ganancia, puerta, compresores y EQ') : 'Enciende el procesador primero'}
+      >
         <Icon name="wand" size={15} />
         Asistente automático
       </button>
@@ -503,7 +535,7 @@ function PresetBar({ cfg, set, on, setMsg, onAssistant }: { cfg: ProcessorConfig
         className="vp-btn ghost"
         onClick={() =>
           confirm('¿Restablecer todo el procesamiento (EQ, dinámica y ganancias)?') &&
-          set((c) => ({ ...defaultProcessor(), input: c.input, output: c.output, monitor: c.monitor, sampleRate: c.sampleRate, userPresets: c.userPresets, useId: c.useId, micId: c.micId }))
+          set((c) => ({ ...defaultProcessor(), input: c.input, output: c.output, monitor: c.monitor, sampleRate: c.sampleRate, userPresets: c.userPresets, useId: c.useId, micId: c.micId, tuner: c.tuner }))
         }
         title="Restablecer"
       >
@@ -544,7 +576,7 @@ function useMeasure(): { running: number; run: (seconds: number, kind: 'peak' | 
   return { running, run }
 }
 
-function InputColumn({ cfg, set, on }: { cfg: ProcessorConfig; set: SetFn; on: boolean }): JSX.Element {
+function InputColumn({ cfg, set, on, inst }: { cfg: ProcessorConfig; set: SetFn; on: boolean; inst: boolean }): JSX.Element {
   const l = useLevels()
   const hold = useHold(l?.inPeak ?? -100)
   const clip = useHold(l && l.inPeak > -0.5 ? 1 : 0, 2000) > 0
@@ -565,7 +597,7 @@ function InputColumn({ cfg, set, on }: { cfg: ProcessorConfig; set: SetFn; on: b
         <button
           className="vp-btn vp-small"
           disabled={!on || m.running > 0}
-          title="Habla o grita como lo harás de verdad durante 5 s: los picos quedarán en −12 dBFS"
+          title={inst ? 'Toca fuerte, como en la parte más intensa del tema, durante 5 s: los picos quedarán en −12 dBFS' : 'Habla o grita como lo harás de verdad durante 5 s: los picos quedarán en −12 dBFS'}
           onClick={() =>
             m.run(5, 'peak', (peak) => {
               const t = autoTrim(cfg.inputGainDb, peak)
@@ -573,7 +605,7 @@ function InputColumn({ cfg, set, on }: { cfg: ProcessorConfig; set: SetFn; on: b
             })
           }
         >
-          {m.running ? `Habla… ${m.running}` : 'Auto'}
+          {m.running ? (inst ? `Toca… ${m.running}` : `Habla… ${m.running}`) : 'Auto'}
         </button>
       </div>
     </aside>
@@ -1455,9 +1487,10 @@ function SaturationModule({ cfg, set }: { cfg: ProcessorConfig; set: SetFn }): J
           onChange={(mode) => p({ mode })}
           options={[
             ['tube', 'Válvula'],
-            ['tape', 'Cinta']
+            ['tape', 'Cinta'],
+            ['amp', 'Ampli']
           ]}
-          title="Válvula añade armónicos pares (cálida); cinta, impares (redonda)"
+          title="Válvula añade armónicos pares (cálida); cinta, impares (redonda); ampli, la distorsión de un ampli de guitarra o bajo"
         />
       }
       graph={
@@ -1469,7 +1502,7 @@ function SaturationModule({ cfg, set }: { cfg: ProcessorConfig; set: SetFn }): J
         </svg>
       }
     >
-      <Knob label="Drive" value={s.driveDb} min={0} max={24} step={0.5} unit="dB" def={6} onChange={(driveDb) => p({ driveDb })} />
+      <Knob label="Drive" value={s.driveDb} min={0} max={s.mode === 'amp' ? 36 : 24} step={0.5} unit="dB" def={6} onChange={(driveDb) => p({ driveDb })} />
       <Knob label="Tono" value={s.toneHz} min={2000} max={20000} step={100} log unit="Hz" def={12000} format={(v) => (v >= 19000 ? 'OFF' : `${(v / 1000).toFixed(1)}k`)} onChange={(toneHz) => p({ toneHz })} />
       <Knob label="Mezcla" value={s.mix} min={0} max={100} unit="%" def={35} onChange={(mix) => p({ mix })} />
     </Module>
@@ -1496,11 +1529,134 @@ function LimiterModule({ cfg, set }: { cfg: ProcessorConfig; set: SetFn }): JSX.
   )
 }
 
+// ---- Instruments: connection tips and tuner
+
+function InstrumentTips({ cfg, latencyMs }: { cfg: ProcessorConfig; latencyMs: number | null }): JSX.Element {
+  const direct = cfg.micId === 'di' || cfg.micId === 'active' || cfg.micId === 'piezo'
+  return (
+    <ul className="vp-tips">
+      {direct ? (
+        <li>
+          <b>Conexión:</b> enchufa el instrumento a la entrada INST / Hi-Z de la interfaz (o pasa por una caja DI a la entrada de micrófono). Una entrada de línea normal le quita graves y brillo.
+        </li>
+      ) : (
+        <li>
+          <b>Micrófono:</b> a 2–5 cm de la rejilla del ampli, apuntando entre el centro del cono (más brillo) y el borde (más grave). En acústica, a 15–20 cm del traste 12, no de la boca.
+        </li>
+      )}
+      <li>
+        <b>Nivel:</b> usa «Auto» tocando fuerte; si la ganancia digital no alcanza, sube la perilla de la interfaz, no la del procesador.
+      </li>
+      <li>
+        <b>Latencia:</b> para tocar escuchándote usa 48 kHz y el búfer más bajo de la interfaz (ASIO en VoiceMeeter).
+        {latencyMs !== null && ` Ahora: ${latencyMs} ms.`}
+        {cfg.noise.on && ' La reducción de ruido suma latencia: apágala.'}
+      </li>
+    </ul>
+  )
+}
+
+interface TunerReading {
+  hz: number
+  clarity: number
+}
+
+function TunerPanel({ cfg, set, on }: { cfg: ProcessorConfig; set: SetFn; on: boolean }): JSX.Element {
+  const [reading, setReading] = useState<TunerReading | null>(null)
+  const tuning = TUNINGS.find((t) => t.id === cfg.tuner.tuning) ?? TUNINGS[0]
+  const a4 = cfg.tuner.a4
+  const setTuner = (p: Partial<ProcessorConfig['tuner']>): void => set((c) => ({ ...c, tuner: { ...c.tuner, ...p } }))
+
+  useEffect(() => {
+    if (!on) {
+      setReading(null)
+      return
+    }
+    const buf = new Float32Array(TUNER_SIZE)
+    const smooth = new PitchSmoother(5)
+    const minHz = tunerMinHz(tuning, a4)
+    let lastSeen = 0
+    const t = setInterval(() => {
+      if (!processorEngine.tunerWave(buf)) return
+      const p = detectPitch(buf, processorEngine.state.sampleRate ?? 48000, minHz, 1500, 0.12)
+      const now = performance.now()
+      if (p && p.clarity > 0.85) {
+        lastSeen = now
+        setReading({ hz: smooth.push(p.hz), clarity: p.clarity })
+      } else if (now - lastSeen > 1500) {
+        // The note faded out: keep the last reading a moment, then clear
+        smooth.reset()
+        setReading(null)
+      }
+    }, 60)
+    return () => clearInterval(t)
+  }, [on, tuning, a4])
+
+  const note = reading ? noteInfo(reading.hz, a4) : null
+  const string = reading ? nearestString(reading.hz, tuning, a4) : null
+  const cents = Math.round(string ? string.cents : (note?.cents ?? 0))
+  const shown = Math.max(-50, Math.min(50, cents))
+  const inTune = reading !== null && Math.abs(cents) <= 3
+  const verdict = !reading ? '' : inTune ? 'Afinado' : cents < 0 ? 'Baja: sube (tensa)' : 'Alta: baja (afloja)'
+
+  return (
+    <>
+      <div className={`vp-tuner ${inTune ? 'ok' : ''}`}>
+        {!on && <div className="vp-graph-off">Enciende el procesador para afinar</div>}
+        <div className="vp-tuner-note">
+          <b>{string ? string.name : note ? note.solfege : '—'}</b>
+          <small>{string ? `Cuerda ${tuning.strings.length - string.index}` : note ? note.name : 'Toca una cuerda suelta'}</small>
+        </div>
+        <div className="vp-tuner-scale">
+          {[-50, -25, -10, 0, 10, 25, 50].map((c) => (
+            <i key={c} className={c === 0 ? 'center' : ''} style={{ left: `${50 + c}%` }}>
+              <span>{c > 0 ? `+${c}` : c}</span>
+            </i>
+          ))}
+          <div className="vp-tuner-zone" />
+          {reading && <div className="vp-tuner-needle" style={{ left: `${50 + shown}%` }} />}
+        </div>
+        <div className="vp-tuner-read">
+          <span className="vp-mono">{reading ? `${reading.hz.toFixed(1)} Hz` : '— Hz'}</span>
+          <span className="vp-mono">{reading ? `${cents > 0 ? '+' : ''}${cents} cents` : ''}</span>
+          <b>{verdict}</b>
+        </div>
+        {tuning.strings.length > 0 && (
+          <div className="vp-tuner-strings">
+            {tuning.strings.map((midi, i) => (
+              <span key={i} className={string?.index === i ? (inTune ? 'on ok' : 'on') : ''}>
+                <small>{tuning.strings.length - i}</small>
+                {midiName(midi)}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <footer className="vp-graph-foot">
+        <label className="vp-field">
+          <span>Afinación</span>
+          <select value={tuning.id} onChange={(e) => setTuner({ tuning: e.target.value })}>
+            {TUNINGS.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Knob label="La4" value={a4} min={415} max={466} step={1} unit="Hz" def={440} size={34} onChange={(v) => setTuner({ a4: v })} />
+        <span className="vp-grow" />
+        <span>Lee la entrada sin procesar · toca cuerdas sueltas, una a la vez</span>
+        <Switch on={cfg.output.mute} onChange={(v) => set({ output: { ...cfg.output, mute: v } })} labels={['MUTE', 'MUTE']} title="Silenciar la salida mientras afinas" />
+      </footer>
+    </>
+  )
+}
+
 // ---- Assistant: 3 s of silence, then 8 s of normal speech
 
 type Phase = 'ready' | 'noise' | 'speech' | 'done'
 
-function Assistant({ cfg, onClose, onApply }: { cfg: ProcessorConfig; onClose: () => void; onApply: (r: AutoSetupResult) => void }): JSX.Element {
+function Assistant({ cfg, inst, onClose, onApply }: { cfg: ProcessorConfig; inst: boolean; onClose: () => void; onApply: (r: AutoSetupResult) => void }): JSX.Element {
   const [phase, setPhase] = useState<Phase>('ready')
   const [left, setLeft] = useState(0)
   const [result, setResult] = useState<AutoSetupResult | null>(null)
@@ -1597,12 +1753,25 @@ function Assistant({ cfg, onClose, onApply }: { cfg: ProcessorConfig; onClose: (
         </header>
         {phase === 'ready' && (
           <>
-            <p>Colócate a la distancia de siempre del micrófono. El asistente medirá:</p>
-            <ol>
-              <li>3 segundos de silencio (ruido de la sala).</li>
-              <li>8 segundos hablando normal, como en una llamada o un directo.</li>
-            </ol>
-            <p className="vp-dim">Con eso ajusta la ganancia, la puerta, los compresores, el de-esser y corrige el EQ hacia una voz equilibrada. Mejor partir de un preset de uso.</p>
+            {inst ? (
+              <>
+                <p>Deja el instrumento conectado y con su volumen de siempre. El asistente medirá:</p>
+                <ol>
+                  <li>3 segundos sin tocar, con las cuerdas apagadas con la mano (zumbido y ruido).</li>
+                  <li>8 segundos tocando como en el tema: notas sueltas, acordes y algún golpe fuerte.</li>
+                </ol>
+                <p className="vp-dim">Con eso ajusta la ganancia, la puerta y los compresores; el EQ del preset no se toca. Mejor partir del preset de tu instrumento.</p>
+              </>
+            ) : (
+              <>
+                <p>Colócate a la distancia de siempre del micrófono. El asistente medirá:</p>
+                <ol>
+                  <li>3 segundos de silencio (ruido de la sala).</li>
+                  <li>8 segundos hablando normal, como en una llamada o un directo.</li>
+                </ol>
+                <p className="vp-dim">Con eso ajusta la ganancia, la puerta, los compresores, el de-esser y corrige el EQ hacia una voz equilibrada. Mejor partir de un preset de uso.</p>
+              </>
+            )}
             <button className="vp-btn primary" onClick={start}>
               Empezar
             </button>
@@ -1612,7 +1781,7 @@ function Assistant({ cfg, onClose, onApply }: { cfg: ProcessorConfig; onClose: (
           <div className="vp-countdown">
             <div>
               <small>{phase === 'noise' ? 'Paso 1 de 2' : 'Paso 2 de 2'}</small>
-              <b>{phase === 'noise' ? 'Silencio…' : 'Habla ahora con normalidad…'}</b>
+              <b>{phase === 'noise' ? (inst ? 'Sin tocar…' : 'Silencio…') : inst ? 'Toca ahora…' : 'Habla ahora con normalidad…'}</b>
             </div>
             <span>{left}</span>
           </div>

@@ -45,9 +45,12 @@ src/renderer/src/
     game/          GameMode contract, registry, modes/*
     players/       players, teams, avatars, age handicap
     settings/      game settings + defaults (appMode, birthdayName)
-    processor/     mic processor: model, 8-band parametric EQ (exact Web Audio biquads), presets use × mic,
-                   auto setup; dynamics.ts (gate/expander with key filters, de-esser, compressor with sidechain HPF
-                   and auto makeup, saturator, look-ahead limiter) and noise.ts (STFT Wiener noise suppressor,
+    processor/     mic processor: model, 8-band parametric EQ (exact Web Audio biquads), presets use × mic
+                   (voice uses and instrument uses: bass, guitar, acoustic, keys, percussion; mics, instrument mics
+                   and DI/active/piezo pickups, `micsFor`/`selectUse`), auto setup; tuning.ts (instrument tuner:
+                   tunings, nearest string, pitch smoother; pitch itself is YIN from studio/pitch.ts);
+                   dynamics.ts (gate/expander with key filters, de-esser, compressor with sidechain HPF
+                   and auto makeup, saturator tube/tape/amp, look-ahead limiter) and noise.ts (STFT Wiener noise suppressor,
                    learned or adaptive profile), both shared with processor.worklet.ts; channels.ts (one
                    setup per device channel: switching channel stores the current one and restores the target)
     mixer/         pure mixer model: strips, buses, solo/mute, pan law, fader taper, EQ response,
@@ -82,7 +85,9 @@ src/renderer/src/
                    one ProcessorEngine per live channel, follows the main power button),
                    Procesador (ProcessorView + processor.css + controls.tsx knobs/meters/icons: one mic → noise
                    reduction → gate → parametric EQ → de-esser → comp ×2 → saturator → limiter → VoiceMeeter Input /
-                   any output, LUFS/true peak, EQ/dynamics/noise graphs, bypass A/B, presets, auto assistant; no emoji),
+                   any output, LUFS/true peak, EQ/dynamics/noise graphs + Afinador tab (tuner), bypass A/B, presets,
+                   auto assistant, instrument mode = instrument use: no noise reduction/de-esser, amp saturator,
+                   connection tips; no emoji),
                    Comparador (takes, synced A/B, blind test, difference curves, best mic per use, session/PDF),
                    Laboratorio (THD+N, phase/goniometer + mic alignment, room RT60), Equipos (device inventory,
                    capabilities, profiles per device, engine latency), Generador (signals +

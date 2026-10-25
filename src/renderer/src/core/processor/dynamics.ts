@@ -335,8 +335,11 @@ export class DeEsser {
 
 export interface SaturationParams {
   on: boolean
-  /** 'tape' = symmetric (odd harmonics), 'tube' = asymmetric (adds even harmonics) */
-  mode: 'tape' | 'tube'
+  /**
+   * 'tape' = symmetric (odd harmonics), 'tube' = asymmetric (adds even harmonics),
+   * 'amp' = guitar/bass amp drive: harder, asymmetric clipping that keeps half the drive as level
+   */
+  mode: 'tape' | 'tube' | 'amp'
   driveDb: number
   /** Brightness of the saturated part: low-pass on the wet signal, Hz */
   toneHz: number
@@ -350,8 +353,16 @@ const TUBE_SLOPE = 1 - Math.tanh(TUBE_BIAS) ** 2
 /** Static saturation curve, unity gain for small signals */
 export function saturate(x: number, drive: number, mode: SaturationParams['mode']): number {
   const u = x * drive
+  if (mode === 'amp') return ampClip(u) / Math.sqrt(drive)
   const y = mode === 'tube' ? (Math.tanh(u + TUBE_BIAS) - Math.tanh(TUBE_BIAS)) / TUBE_SLOPE : Math.tanh(u)
   return y / drive
+}
+
+/** Sharper knee than tanh, and the negative half clips earlier (like a single-ended stage) */
+function ampClip(u: number): number {
+  const lim = u >= 0 ? 1 : 0.7
+  const v = u / lim
+  return (lim * v) / Math.pow(1 + Math.pow(Math.abs(v), 4), 0.25)
 }
 
 export class Saturator {
