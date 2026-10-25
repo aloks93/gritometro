@@ -43,8 +43,8 @@ function createWindow(): void {
 }
 
 function setupPermissions(): void {
-  // Microphone (and webcam for the winner photo) are the whole point of the app
-  const allowed = new Set(['media', 'mediaKeySystem', 'speaker-selection'])
+  // Microphone (and webcam for the winner photo) are the whole point of the app; MIDI drives the studio mixer
+  const allowed = new Set(['media', 'mediaKeySystem', 'speaker-selection', 'midi', 'midiSysex'])
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(allowed.has(permission))
   })

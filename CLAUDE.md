@@ -41,7 +41,9 @@ src/renderer/src/
   ui/              React: store (persisted app state), hooks, sound, components/, screens/
   ui/studio/       Studio shell (own scoped CSS, does not use party themes): Monitor (meters, LUFS,
                    tuner, FFT/RTA/spectrogram, scope, headphone monitoring), Sonómetro, Grabadora,
-                   Mezclador (virtual console: strips with HPF/gate/EQ/comp/delay → A/B buses, scenes,
+                   Mezclador (virtual console: strips with HPF/notch/gate/EQ/comp/limiter/delay/ducking → A/B buses,
+                   pre/post-fader meters, CUE/PFL + headphone monitor, gain staging, anti-feedback, MIDI learn,
+                   user presets, scenes,
                    stereo bus recording, auto trim; any bus can feed the analyzers),
                    Comparador (takes, synced A/B, blind test, difference curves, session/PDF),
                    Generador (signals + latency), playback.ts / recordings (in-memory audio, never persisted)

@@ -37,6 +37,10 @@ export interface Strip {
   gate: { on: boolean; thresholdDb: number; rangeDb: number; attackMs: number; holdMs: number; releaseMs: number }
   eq: { on: boolean; bands: EqBand[] }
   comp: { on: boolean; thresholdDb: number; ratio: number; kneeDb: number; attackMs: number; releaseMs: number; makeupDb: number }
+  /** Channel peak limiter after the compressor */
+  limiter: { on: boolean; ceilingDb: number }
+  /** Pre-fader listen: sends this strip to the monitor output instead of the monitored bus */
+  cue: boolean
   /** Narrow cuts against feedback (max MAX_NOTCHES) */
   notches: Notch[]
   /** Sidechain ducking: this strip drops while `sourceId` is active */
@@ -70,7 +74,7 @@ export interface Duck {
   releaseMs: number
 }
 
-export type MidiTargetKind = 'stripFader' | 'stripMute' | 'stripSolo' | 'stripPan' | 'busFader' | 'busMute'
+export type MidiTargetKind = 'stripFader' | 'stripMute' | 'stripSolo' | 'stripCue' | 'stripPan' | 'busFader' | 'busMute'
 
 export interface MidiMapping {
   /** "cc:<channel>:<number>" or "note:<channel>:<number>" */
@@ -111,7 +115,32 @@ export interface MixerConfig {
   /** Engine sample rate; null = device default */
   sampleRate: number | null
   midi: MidiMapping[]
+  /** Where the strip meters read: after processing (pre-fader) or after the fader */
+  meterPoint: MeterPoint
+  monitor: Monitor
+  userPresets: UserPreset[]
 }
+
+export type MeterPoint = 'pre' | 'post'
+
+/** Headphone/cue output, like a console's phones section */
+export interface Monitor {
+  on: boolean
+  /** Output device; null = system default */
+  deviceId: string | null
+  levelDb: number
+  /** Bus heard when no strip has cue pressed */
+  source: string
+}
+
+/** Processing a user saved to reuse on other strips */
+export interface UserPreset {
+  id: string
+  name: string
+  apply: ProcessingSnapshot
+}
+
+export type ProcessingSnapshot = Pick<Strip, 'hpf' | 'gate' | 'eq' | 'comp'> & Partial<Pick<Strip, 'limiter' | 'notches'>>
 
 export const STRIP_COLORS = ['#ffb020', '#3fb6ff', '#5ee08a', '#ff6b8b', '#b48cff', '#ffe066', '#4dd6c9', '#ff9a5a']
 export const MAX_STRIPS = 8
@@ -140,6 +169,8 @@ export function createStrip(index: number, overrides: Partial<Strip> = {}): Stri
     gate: { on: false, thresholdDb: -50, rangeDb: -60, attackMs: 2, holdMs: 80, releaseMs: 150 },
     eq: { on: true, bands: defaultEqBands() },
     comp: { on: false, thresholdDb: -20, ratio: 3, kneeDb: 6, attackMs: 10, releaseMs: 150, makeupDb: 0 },
+    limiter: { on: false, ceilingDb: -3 },
+    cue: false,
     notches: [],
     duck: { on: false, sourceId: null, thresholdDb: -40, amountDb: -15, attackMs: 40, releaseMs: 500 },
     delayMs: 0,
@@ -163,7 +194,17 @@ export function defaultBuses(): Bus[] {
 }
 
 export function defaultMixer(): MixerConfig {
-  return { strips: [createStrip(0, { name: 'Micro 1' })], buses: defaultBuses(), scenes: [], sampleRate: 48000, midi: [] }
+  return {
+    strips: [createStrip(0, { name: 'Micro 1' })],
+    buses: defaultBuses(),
+    scenes: [],
+    sampleRate: 48000,
+    midi: [],
+    meterPoint: 'post',
+    // Off by default: monitoring to speakers would feed back
+    monitor: { on: false, deviceId: null, levelDb: -6, source: 'A1' },
+    userPresets: []
+  }
 }
 
 /** Fills fields added in newer versions so old saves keep working */
@@ -172,7 +213,19 @@ export function mergeMixer(saved: Partial<MixerConfig> | null | undefined): Mixe
   if (!saved) return d
   const buses = Array.isArray(saved.buses) && saved.buses.length ? saved.buses.map((b) => ({ ...d.buses[0], ...b })) : d.buses
   const strips = Array.isArray(saved.strips) ? saved.strips.map((s, i) => normalizeStrip(s, i, buses)) : d.strips
-  return { ...d, ...saved, strips, buses, scenes: Array.isArray(saved.scenes) ? saved.scenes : [], midi: Array.isArray(saved.midi) ? saved.midi : [] }
+  const monitor = { ...d.monitor, ...saved.monitor }
+  if (!buses.some((b) => b.id === monitor.source)) monitor.source = buses[0].id
+  return {
+    ...d,
+    ...saved,
+    strips,
+    buses,
+    scenes: Array.isArray(saved.scenes) ? saved.scenes : [],
+    midi: Array.isArray(saved.midi) ? saved.midi : [],
+    meterPoint: saved.meterPoint === 'pre' ? 'pre' : 'post',
+    monitor,
+    userPresets: Array.isArray(saved.userPresets) ? saved.userPresets : []
+  }
 }
 
 function normalizeStrip(s: Partial<Strip>, i: number, buses: Bus[]): Strip {
@@ -186,6 +239,7 @@ function normalizeStrip(s: Partial<Strip>, i: number, buses: Bus[]): Strip {
     gate: { ...base.gate, ...s.gate },
     eq: { on: s.eq?.on ?? base.eq.on, bands },
     comp: { ...base.comp, ...s.comp },
+    limiter: { ...base.limiter, ...s.limiter },
     notches: Array.isArray(s.notches) ? s.notches.slice(0, MAX_NOTCHES) : [],
     duck: { ...base.duck, ...s.duck },
     sends: (s.sends ?? base.sends).filter((id) => buses.some((b) => b.id === id))
@@ -336,6 +390,7 @@ export function applyMidi(cfg: MixerConfig, m: MidiMessage): MixerConfig {
     else if (map.kind === 'busFader') bus((b) => ({ ...b, faderDb: posToFader(v) }))
     else if (press && map.kind === 'stripMute') strip((s) => ({ ...s, mute: !s.mute }))
     else if (press && map.kind === 'stripSolo') strip((s) => ({ ...s, solo: !s.solo }))
+    else if (press && map.kind === 'stripCue') strip((s) => ({ ...s, cue: !s.cue }))
     else if (press && map.kind === 'busMute') bus((b) => ({ ...b, mute: !b.mute }))
   }
   return next
@@ -352,7 +407,7 @@ export function learnMidi(cfg: MixerConfig, key: string, kind: MidiTargetKind, i
 export interface StripPreset {
   id: string
   name: string
-  apply: Pick<Strip, 'hpf' | 'gate' | 'eq' | 'comp'>
+  apply: ProcessingSnapshot
 }
 
 const band = (type: EqBand['type'], freq: number, gainDb: number, q = 1): EqBand => ({ type, freq, gainDb, q })
@@ -418,11 +473,63 @@ export const STRIP_PRESETS: StripPreset[] = [
   }
 ]
 
-/** Applies a preset's processing; routing, levels and name stay as they were */
-export function applyPreset(strip: Strip, presetId: string): Strip {
-  const p = STRIP_PRESETS.find((x) => x.id === presetId)
+/** Applies a preset's processing (built-in or user); routing, levels and name stay as they were */
+export function applyPreset(strip: Strip, presetId: string, user: UserPreset[] = []): Strip {
+  const p = STRIP_PRESETS.find((x) => x.id === presetId) ?? user.find((x) => x.id === presetId)
   if (!p) return strip
-  return { ...strip, ...(JSON.parse(JSON.stringify(p.apply)) as StripPreset['apply']) }
+  return applyProcessing(strip, p.apply)
+}
+
+export function applyProcessing(strip: Strip, apply: ProcessingSnapshot): Strip {
+  return { ...strip, ...structuredCloneSafe(apply) }
+}
+
+/** The strip's processing, detached from it */
+export function processingOf(strip: Strip): ProcessingSnapshot {
+  return structuredCloneSafe({ hpf: strip.hpf, gate: strip.gate, eq: strip.eq, comp: strip.comp, limiter: strip.limiter, notches: strip.notches })
+}
+
+/** Saves the strip's processing as a user preset; the same name overwrites */
+export function saveUserPreset(cfg: MixerConfig, strip: Strip, name: string, id = `preset-${Date.now().toString(36)}`): MixerConfig {
+  const n = name.trim() || strip.name
+  const existing = cfg.userPresets.find((p) => p.name.toLowerCase() === n.toLowerCase())
+  const preset: UserPreset = { id: existing?.id ?? id, name: n, apply: processingOf(strip) }
+  return { ...cfg, userPresets: existing ? cfg.userPresets.map((p) => (p.id === existing.id ? preset : p)) : [...cfg.userPresets, preset] }
+}
+
+// ---- Monitor / cue
+
+/** What the monitor output plays: the cued strips (pre-fader) if any, otherwise the source bus */
+export function monitorFeed(cfg: Pick<MixerConfig, 'strips' | 'monitor'>): { kind: 'cue'; strips: string[] } | { kind: 'bus'; bus: string } {
+  const cued = cfg.strips.filter((s) => s.cue).map((s) => s.id)
+  return cued.length ? { kind: 'cue', strips: cued } : { kind: 'bus', bus: cfg.monitor.source }
+}
+
+// ---- Gain staging
+
+export type LevelStatus = 'silence' | 'low' | 'ok' | 'hot' | 'clip'
+
+/** Classifies a peak level (dBFS) the way a console's LEDs would */
+export function levelStatus(peakDb: number): LevelStatus {
+  if (peakDb > -1) return 'clip'
+  if (peakDb > -6) return 'hot'
+  if (peakDb > -30) return 'ok'
+  if (peakDb > -60) return 'low'
+  return 'silence'
+}
+
+/**
+ * Advice from the held input peak (post-trim) and the held pre-fader peak (after processing).
+ * The input stage is the one that matters: digital gain later can't fix a noisy or clipped input.
+ */
+export function gainAdvice(inPeakDb: number, preFaderDb: number): { status: LevelStatus; message: string } {
+  const st = levelStatus(inPeakDb)
+  if (st === 'clip') return { status: 'clip', message: 'La entrada satura: baja el trim o la ganancia del preamplificador.' }
+  if (st === 'silence') return { status: 'silence', message: 'No llega señal: revisa el cable, el canal o el phantom (+48 V).' }
+  if (st === 'low') return { status: 'low', message: 'Entrada baja: sube el preamplificador hasta que los picos lleguen a −18…−12 dBFS.' }
+  if (levelStatus(preFaderDb) === 'clip') return { status: 'clip', message: 'El procesamiento satura (EQ o compensación del compresor): baja la ganancia de compensación.' }
+  if (st === 'hot') return { status: 'hot', message: 'Entrada alta: poco margen para un grito. Baja 3–6 dB.' }
+  return { status: 'ok', message: 'Ganancia correcta: buen margen y lejos del ruido.' }
 }
 
 // ---- Routing checks
@@ -433,7 +540,7 @@ export interface RoutingWarning {
 }
 
 /** Things a sound engineer would flag before going live */
-export function routingWarnings(cfg: Pick<MixerConfig, 'strips' | 'buses'>): RoutingWarning[] {
+export function routingWarnings(cfg: Pick<MixerConfig, 'strips' | 'buses'> & Partial<Pick<MixerConfig, 'monitor'>>): RoutingWarning[] {
   const warnings: RoutingWarning[] = []
   for (const s of cfg.strips) {
     const outs = s.sends.map((id) => cfg.buses.find((b) => b.id === id)).filter((b): b is Bus => !!b && b.kind === 'out' && !b.mute)
@@ -441,6 +548,7 @@ export function routingWarnings(cfg: Pick<MixerConfig, 'strips' | 'buses'>): Rou
     if (s.sends.length === 0) warnings.push({ stripId: s.id, message: `${s.name} no está enviada a ningún bus.` })
     if (s.duck.on && (!s.duck.sourceId || !cfg.strips.some((x) => x.id === s.duck.sourceId && x.id !== s.id)))
       warnings.push({ stripId: s.id, message: `${s.name}: el ducking no tiene una entrada que lo active.` })
+    if (s.cue && !cfg.monitor?.on) warnings.push({ stripId: s.id, message: `${s.name} está en CUE pero el monitor está apagado.` })
     if (s.trimDb + s.faderDb > 24) warnings.push({ stripId: s.id, message: `${s.name} tiene mucha ganancia digital: sube mejor el preamplificador.` })
   }
   return warnings
@@ -463,10 +571,11 @@ export function loadScene(cfg: MixerConfig, sceneId: string): MixerConfig {
 const MIXER_APP = 'gritometro-mezclador'
 
 export function serializeMixer(cfg: MixerConfig): string {
-  return JSON.stringify({ app: MIXER_APP, version: 1, strips: cfg.strips, buses: cfg.buses, scenes: cfg.scenes, midi: cfg.midi }, null, 2)
+  const { strips, buses, scenes, midi, meterPoint, monitor, userPresets } = cfg
+  return JSON.stringify({ app: MIXER_APP, version: 1, strips, buses, scenes, midi, meterPoint, monitor, userPresets }, null, 2)
 }
 
-export function parseMixer(text: string): Pick<MixerConfig, 'strips' | 'buses' | 'scenes' | 'midi'> {
+export function parseMixer(text: string): Pick<MixerConfig, 'strips' | 'buses' | 'scenes' | 'midi' | 'meterPoint' | 'monitor' | 'userPresets'> {
   let raw: unknown
   try {
     raw = JSON.parse(text)
@@ -476,7 +585,8 @@ export function parseMixer(text: string): Pick<MixerConfig, 'strips' | 'buses' |
   const r = raw as { app?: string; strips?: unknown; buses?: unknown; scenes?: unknown }
   if (!r || r.app !== MIXER_APP || !Array.isArray(r.strips)) throw new Error('No es una configuración del mezclador.')
   const merged = mergeMixer(r as Partial<MixerConfig>)
-  return { strips: merged.strips.slice(0, MAX_STRIPS), buses: merged.buses, scenes: merged.scenes, midi: merged.midi }
+  const { buses, scenes, midi, meterPoint, monitor, userPresets } = merged
+  return { strips: merged.strips.slice(0, MAX_STRIPS), buses, scenes, midi, meterPoint, monitor, userPresets }
 }
 
 function structuredCloneSafe<T>(v: T): T {
