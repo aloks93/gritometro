@@ -59,6 +59,9 @@ export function HomeScreen({ navigate }: { navigate: Navigate }): JSX.Element {
           <button className="btn tile" onClick={() => navigate({ name: 'records' })}>
             🏆 Récords
           </button>
+          <button className="btn tile" onClick={() => navigate({ name: 'cake' })}>
+            🎂 Soplar las velas
+          </button>
           <button className="btn tile" onClick={() => navigate({ name: 'customize' })}>
             🎨 Personalizar
           </button>

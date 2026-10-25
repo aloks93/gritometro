@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { createPlayer, handicapFor, randomAvatar, type Player } from '../../core/players/players'
+import { createPlayer, handicapFor, isBirthdayPlayer, randomAvatar, type Player } from '../../core/players/players'
 import { Panel, Screen } from '../components/Layout'
 import { MonsterAvatar } from '../components/MonsterAvatar'
 import type { Navigate } from '../nav'
@@ -66,6 +66,7 @@ export function PlayersScreen({ navigate }: { navigate: Navigate }): JSX.Element
                 max={99}
                 onChange={(e) => edit(p.id, { age: e.target.value ? Number(e.target.value) : undefined })}
               />
+              {isBirthdayPlayer(p, data.settings.birthdayName) && <span className="chip">👑 Cumpleañera</span>}
               {bonus !== 1 && <span className="chip">Bonus x{bonus}</span>}
               <div className="row">
                 <label className="btn small">

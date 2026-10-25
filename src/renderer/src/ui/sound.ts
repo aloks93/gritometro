@@ -52,6 +52,25 @@ const synth = {
   win: (style: SoundStyle) => {
     const notes = style === 'factory' ? [392, 523, 659, 784, 659, 784, 1047] : [523, 659, 784, 1047, 784, 1047]
     notes.forEach((f, i) => tone(f, i * 0.14, 0.22, 'triangle', 0.14))
+  },
+  /** "Happy Birthday to You" (public domain melody), music-box style */
+  birthday: () => {
+    const N: Record<string, number> = { G4: 392, A4: 440, B4: 494, C5: 523, D5: 587, E5: 659, F5: 698, G5: 784 }
+    // [note, beats] at 3/4; the pickup notes are dotted-eighth + sixteenth
+    const song: [string, number][] = [
+      ['G4', 0.75], ['G4', 0.25], ['A4', 1], ['G4', 1], ['C5', 1], ['B4', 2],
+      ['G4', 0.75], ['G4', 0.25], ['A4', 1], ['G4', 1], ['D5', 1], ['C5', 2],
+      ['G4', 0.75], ['G4', 0.25], ['G5', 1], ['E5', 1], ['C5', 1], ['B4', 1], ['A4', 2],
+      ['F5', 0.75], ['F5', 0.25], ['E5', 1], ['C5', 1], ['D5', 1], ['C5', 3]
+    ]
+    const beat = 0.42
+    let t = 0
+    for (const [note, beats] of song) {
+      const dur = beats * beat
+      tone(N[note], t, dur * 0.95, 'triangle', 0.13)
+      tone(N[note] * 2, t, dur * 0.5, 'sine', 0.03)
+      t += dur
+    }
   }
 }
 
@@ -61,6 +80,7 @@ export interface Sounds {
   result: () => void
   record: () => void
   win: () => void
+  birthday: () => void
 }
 
 export function makeSounds(theme: Theme, enabled: boolean): Sounds {
@@ -77,7 +97,8 @@ export function makeSounds(theme: Theme, enabled: boolean): Sounds {
     go: guard(synth.go),
     result: guard(() => synth.result(theme.soundStyle)),
     record: guard(() => (theme.sounds.record ? playUrl(theme.sounds.record) : synth.record(theme.soundStyle))),
-    win: guard(() => (theme.sounds.win ? playUrl(theme.sounds.win) : synth.win(theme.soundStyle)))
+    win: guard(() => (theme.sounds.win ? playUrl(theme.sounds.win) : synth.win(theme.soundStyle))),
+    birthday: guard(synth.birthday)
   }
 }
 

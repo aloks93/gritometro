@@ -48,6 +48,16 @@ export function createPlayer(name: string, age?: number): Player {
   return { id: newId('p'), name: name.trim(), age, avatar: randomAvatar() }
 }
 
+function normalizeName(name: string): string {
+  return name.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase()
+}
+
+/** True when this player is the birthday girl/boy set in Ajustes (gets a crown in the UI) */
+export function isBirthdayPlayer(player: Pick<Player, 'name'>, birthdayName: string): boolean {
+  const target = normalizeName(birthdayName)
+  return target !== '' && normalizeName(player.name) === target
+}
+
 /** Multiplier for the youngest matching rule; rules are evaluated by ascending maxAge */
 export function handicapFor(age: number | undefined, rules: HandicapRule[], enabled: boolean): number {
   if (!enabled || age === undefined) return 1
