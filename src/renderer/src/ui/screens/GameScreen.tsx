@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import confetti from 'canvas-confetti'
 import { audioEngine } from '../../core/audio/AudioEngine'
 import { effectiveProfile } from '../../core/audio/AudioConfig'
-import { scoreScream, SilenceWatcher, type ScoreResult } from '../../core/audio/ScoreEngine'
+import { scoreScream, SilenceWatcher, SustainWatcher, type ScoreResult } from '../../core/audio/ScoreEngine'
 import { normalizeLevel } from '../../core/audio/LevelAnalyzer'
 import { getMode } from '../../core/game/registry'
-import type { Standing, Turn } from '../../core/game/GameMode'
+import type { Standing, Turn, TurnKind } from '../../core/game/GameMode'
 import { handicapFor, newId, type Player } from '../../core/players/players'
 import { levelLabel } from '../../themes/Theme'
 import { Meter, Reveal } from '../components/Meter'
@@ -122,6 +122,31 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
       }, 100)
     })
 
+  const runSustain = (t: Turn): Promise<void> =>
+    new Promise((resolve) => {
+      const watcher = new SustainWatcher(profile.noiseFloorDb, settings.sustainThresholdDb)
+      const limit = settings.sustainMaxSeconds * 1000
+      let done = false
+      const end = (): void => {
+        if (done) return
+        done = true
+        off()
+        clearInterval(guard)
+        const heldS = Math.min(limit, watcher.heldMs()) / 1000
+        if (alive.current) finishTurn({ turn: t, value: Math.round(heldS * 10) / 10, isRecord: false })
+        resolve()
+      }
+      const off = audioEngine.onReading((r) => {
+        const ended = watcher.push(r)
+        setElapsed(watcher.heldMs(r.t) / 1000)
+        if (ended || watcher.heldMs(r.t) >= limit) end()
+      })
+      // Readings stop if the mic drops out; don't leave the turn hanging
+      const guard = setInterval(() => {
+        if (audioEngine.state.status !== 'running') end()
+      }, 500)
+    })
+
   const finishTurn = (result: LastResult): void => {
     setLast(result)
     setState((s: unknown) => mode.applyResult(s, { playerId: result.turn.playerId, value: result.value }))
@@ -153,6 +178,7 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
     if (!alive.current) return
     setPhase('active')
     if (turn.kind === 'silence') await runSilence(turn)
+    else if (turn.kind === 'sustain') await runSustain(turn)
     else await runScream(turn, player)
   }, [turn, player, phase, engine.status, settings, sounds])
 
@@ -191,14 +217,16 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
         setOverlay={setOverlay}
         onRematch={rematch}
         navigate={navigate}
-        isSilence={mode.turnKind === 'silence'}
+        kind={mode.turnKind}
       />
     )
   }
 
   const liveLevel = phase === 'result' && last?.score ? Math.min(1, last.score.score / 100) : level
   const liveSpl = reading ? Math.round(reading.smoothedDb + profile.splOffset) : null
-  const silenceRatio = settings.silenceMaxSeconds ? elapsed / settings.silenceMaxSeconds : 0
+  const timedMax = turn?.kind === 'sustain' ? settings.sustainMaxSeconds : settings.silenceMaxSeconds
+  const timedRatio = timedMax ? elapsed / timedMax : 0
+  const isTimed = turn?.kind === 'silence' || turn?.kind === 'sustain'
 
   return (
     <div className={`screen game-screen phase-${phase}`}>
@@ -254,7 +282,7 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
                 <>
                   <p className="big-text">{theme.texts.getReady}</p>
                   <button className="btn primary huge" onClick={startTurn}>
-                    {turn?.kind === 'silence' ? '🤫 Empezar silencio' : `🎤 ${theme.texts.screamCta}`}
+                    {turn?.kind === 'silence' ? '🤫 Empezar silencio' : turn?.kind === 'sustain' ? '⏱️ Empezar grito largo' : `🎤 ${theme.texts.screamCta}`}
                   </button>
                   <p className="muted">o pulsa ESPACIO</p>
                 </>
@@ -262,17 +290,17 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
               {phase === 'countdown' && <div className="countdown" key={count}>{count || '¡YA!'}</div>}
               {phase === 'active' && (
                 <>
-                  <p className="cta-text">{turn?.kind === 'silence' ? theme.texts.silenceCta : theme.texts.screamCta}</p>
-                  {turn?.kind === 'silence' ? (
+                  <p className="cta-text">{turn?.kind === 'silence' ? theme.texts.silenceCta : turn?.kind === 'sustain' ? theme.texts.sustainCta : theme.texts.screamCta}</p>
+                  {isTimed ? (
                     <p className="big-number">{elapsed.toFixed(1)} s</p>
                   ) : (
                     <div className="progress">
                       <div style={{ width: `${Math.min(100, (elapsed / settings.screamSeconds) * 100)}%` }} />
                     </div>
                   )}
-                  {turn?.kind === 'silence' && (
+                  {isTimed && (
                     <div className="progress">
-                      <div style={{ width: `${Math.min(100, silenceRatio * 100)}%` }} />
+                      <div style={{ width: `${Math.min(100, timedRatio * 100)}%` }} />
                     </div>
                   )}
                   {settings.showDb && liveSpl !== null && turn?.kind === 'scream' && <p className="db-live">≈ {liveSpl} dB</p>}
@@ -319,6 +347,8 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
   )
 }
 
+const PODIUM_LABEL: Record<TurnKind, string> = { scream: 'Grito', silence: 'Silencio', sustain: 'Grito más largo' }
+
 function Podium({
   standings,
   session,
@@ -326,7 +356,7 @@ function Podium({
   setOverlay,
   onRematch,
   navigate,
-  isSilence
+  kind
 }: {
   standings: Standing[]
   session: GameSession
@@ -334,14 +364,14 @@ function Podium({
   setOverlay: (o: 'certificate' | 'photo' | null) => void
   onRematch: () => void
   navigate: Navigate
-  isSilence: boolean
+  kind: TurnKind
 }): JSX.Element {
   const { theme, data } = useStore()
   const top = standings.slice(0, 3)
   const winner = top[0]
   const order = [top[1], top[0], top[2]]
   const findPlayer = (id: string): Player | undefined => session.ctx.players.find((p) => p.id === id)
-  const detail = winner ? `${isSilence ? 'Silencio' : 'Grito'}: ${winner.display}` : ''
+  const detail = winner ? `${PODIUM_LABEL[kind]}: ${winner.display}` : ''
 
   return (
     <div className="screen podium-screen">

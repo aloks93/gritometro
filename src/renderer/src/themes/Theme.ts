@@ -31,6 +31,7 @@ export interface ThemeTexts {
   subtitle: string
   screamCta: string
   silenceCta: string
+  sustainCta: string
   getReady: string
   resultTitle: string
   newRecord: string

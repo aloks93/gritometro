@@ -34,6 +34,7 @@ export const fabricaMonstruosTheme: Theme = {
     subtitle: 'Fábrica de Gritos · Departamento de Sustos',
     screamCta: '¡A GRITAR!',
     silenceCta: 'Shhh... ¡que no despierte el niño!',
+    sustainCta: '¡Sigue gritando! ¡El tanque se sigue llenando!',
     getReady: 'Prepárate, asustador...',
     resultTitle: 'Energía de grito recolectada',
     newRecord: '¡NUEVO RÉCORD DE LA FÁBRICA!',

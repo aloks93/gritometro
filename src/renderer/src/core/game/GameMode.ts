@@ -1,6 +1,7 @@
 import type { Player, Team } from '../players/players'
 
-export type TurnKind = 'scream' | 'silence'
+/** sustain = longest scream; like silence, its value is seconds */
+export type TurnKind = 'scream' | 'silence' | 'sustain'
 
 export interface Turn {
   playerId: string
@@ -12,7 +13,7 @@ export interface Turn {
 
 export interface TurnResult {
   playerId: string
-  /** Points for scream turns, seconds survived for silence turns */
+  /** Points for scream turns, seconds for silence and sustain turns */
   value: number
 }
 

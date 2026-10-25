@@ -6,6 +6,7 @@ import { duelMode } from './modes/duel'
 import { tournamentMode, buildFirstRound } from './modes/tournament'
 import { teamTankMode } from './modes/teamTank'
 import { silenceMode } from './modes/silence'
+import { longestMode } from './modes/longest'
 import { gameModes } from './registry'
 
 function ctxOf(n: number, teams = 0): GameContext {
@@ -49,6 +50,18 @@ describe('silence', () => {
     const ctx = ctxOf(2)
     const s = silenceMode.init(ctx, silenceMode.defaultConfig)
     expect(silenceMode.nextTurn(s)?.kind).toBe('silence')
+  })
+})
+
+describe('longest scream', () => {
+  it('uses sustain turns and the longest hold wins', () => {
+    const ctx = ctxOf(3)
+    expect(longestMode.nextTurn(longestMode.init(ctx, longestMode.defaultConfig))?.kind).toBe('sustain')
+    const { s, turns } = play(longestMode, ctx, { attempts: 2, shuffle: 0 }, (id, turn) => (id === 'p2' && turn === 4 ? 12.3 : 5))
+    expect(turns).toBe(6)
+    const st = longestMode.standings(s, ctx)
+    expect(st[0].id).toBe('p2')
+    expect(st[0].display).toBe('12.3 s')
   })
 })
 

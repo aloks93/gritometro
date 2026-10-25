@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LevelReading } from './LevelAnalyzer'
 import { MIN_DB, rms, toDb, smooth, normalizeLevel } from './LevelAnalyzer'
-import { scoreScream, SilenceWatcher, sustainedPeak } from './ScoreEngine'
+import { scoreScream, SilenceWatcher, SustainWatcher, sustainedPeak } from './ScoreEngine'
 import { noiseFloorFrom } from './Calibration'
 
 const FRAME_MS = 16
@@ -82,6 +82,35 @@ describe('SilenceWatcher', () => {
     expect(brokeAt).toBeGreaterThan(0)
     expect(w.survivedMs(99999)).toBeGreaterThan(2000)
     expect(w.survivedMs(99999)).toBeLessThan(2200)
+  })
+})
+
+describe('SustainWatcher', () => {
+  const run = (levels: number[], w = new SustainWatcher(-60, 20, 250, 4000)): { w: SustainWatcher; endedAt: number } => {
+    let endedAt = -1
+    frames(levels).forEach((r, i) => {
+      if (w.push(r) && endedAt < 0) endedAt = i
+    })
+    return { w, endedAt }
+  }
+
+  it('times the scream from start to the moment it stops', () => {
+    const { w, endedAt } = run([...constant(-60, 500), ...constant(-30, 2000), ...constant(-60, 1000)])
+    expect(endedAt).toBeGreaterThan(0)
+    expect(w.heldMs()).toBeGreaterThan(1950)
+    expect(w.heldMs()).toBeLessThan(2050)
+  })
+
+  it('forgives a short dip in the voice', () => {
+    const { w } = run([...constant(-30, 1000), ...constant(-60, 160), ...constant(-30, 1000), ...constant(-60, 1000)])
+    expect(w.heldMs()).toBeGreaterThan(2100)
+  })
+
+  it('a quiet voice under the threshold does not count', () => {
+    const { w, endedAt } = run(constant(-50, 5000))
+    expect(w.started).toBe(false)
+    expect(endedAt).toBeGreaterThan(0)
+    expect(w.heldMs()).toBe(0)
   })
 })
 

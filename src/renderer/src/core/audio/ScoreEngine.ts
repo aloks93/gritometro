@@ -114,3 +114,46 @@ export class SilenceWatcher {
     return (this.brokenAt ?? now) - this.startT
   }
 }
+
+/**
+ * Live detector for the longest-scream challenge: the clock starts when the level rises
+ * `thresholdDb` above the floor and stops once it stays below for `gapMs`
+ * (a quick wobble in the voice is forgiven). No scream within `startMs` scores 0 s.
+ */
+export class SustainWatcher {
+  private firstT: number | null = null
+  private loudStart: number | null = null
+  private lastLoud: number | null = null
+  ended = false
+
+  constructor(
+    private floorDb: number,
+    private thresholdDb = 20,
+    private gapMs = 250,
+    private startMs = 4000
+  ) {}
+
+  /** Returns true once the scream is over (or never started) */
+  push(r: LevelReading): boolean {
+    if (this.ended) return true
+    if (this.firstT === null) this.firstT = r.t
+    if (r.rmsDb > this.floorDb + this.thresholdDb) {
+      if (this.loudStart === null) this.loudStart = r.t
+      this.lastLoud = r.t
+    } else if (this.lastLoud !== null && r.t - this.lastLoud >= this.gapMs) {
+      this.ended = true
+    } else if (this.loudStart === null && r.t - this.firstT >= this.startMs) {
+      this.ended = true
+    }
+    return this.ended
+  }
+
+  get started(): boolean {
+    return this.loudStart !== null
+  }
+
+  heldMs(now?: number): number {
+    if (this.loudStart === null || this.lastLoud === null) return 0
+    return (this.ended || now === undefined ? this.lastLoud : Math.max(this.lastLoud, now)) - this.loudStart
+  }
+}

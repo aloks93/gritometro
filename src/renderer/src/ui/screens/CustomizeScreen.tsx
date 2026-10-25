@@ -12,6 +12,7 @@ const TEXT_FIELDS: { key: keyof Omit<ThemeTexts, 'levels'>; label: string }[] = 
   { key: 'screamCta', label: 'Botón / mensaje para gritar' },
   { key: 'getReady', label: 'Mensaje antes del turno' },
   { key: 'silenceCta', label: 'Mensaje del reto del silencio' },
+  { key: 'sustainCta', label: 'Mensaje del grito más largo' },
   { key: 'resultTitle', label: 'Título del resultado' },
   { key: 'newRecord', label: 'Mensaje de nuevo récord' },
   { key: 'winnerTitle', label: 'Título del ganador' },

@@ -12,6 +12,10 @@ export interface GameSettings {
   screamSeconds: number
   /** Upper limit for the silence challenge */
   silenceMaxSeconds: number
+  /** Upper limit for the longest-scream challenge */
+  sustainMaxSeconds: number
+  /** dB above the floor the voice must stay over to keep the longest-scream clock running */
+  sustainThresholdDb: number
   /** Score sensitivity: dB above the floor needed for 100 points */
   rangeDb: number
   minBurstMs: number
@@ -31,6 +35,8 @@ export function defaultGameSettings(): GameSettings {
     countdownSeconds: 3,
     screamSeconds: 3,
     silenceMaxSeconds: 30,
+    sustainMaxSeconds: 60,
+    sustainThresholdDb: 20,
     rangeDb: 50,
     minBurstMs: 150,
     handicapEnabled: true,

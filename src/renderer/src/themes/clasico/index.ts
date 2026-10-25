@@ -28,6 +28,7 @@ export const clasicoTheme: Theme = {
     subtitle: '¿Quién grita más fuerte?',
     screamCta: '¡GRITA!',
     silenceCta: 'Silencio total...',
+    sustainCta: '¡Aaaaah! ¡No pares!',
     getReady: 'Prepárate',
     resultTitle: 'Resultado',
     newRecord: '¡Nuevo récord!',

@@ -53,6 +53,12 @@ export function SettingsScreen({ navigate }: { navigate: Navigate }): JSX.Elemen
           <Field label="Máximo del reto del silencio">
             <Slider value={s.silenceMaxSeconds} min={5} max={120} step={5} onChange={(v) => set({ silenceMaxSeconds: v })} format={(v) => `${v} s`} />
           </Field>
+          <Field label="Máximo del grito más largo">
+            <Slider value={s.sustainMaxSeconds} min={10} max={120} step={5} onChange={(v) => set({ sustainMaxSeconds: v })} format={(v) => `${v} s`} />
+          </Field>
+          <Field label="Fuerza mínima del grito largo" hint="dB por encima del ruido que hay que mantener para que el reloj siga corriendo. Menos = más fácil.">
+            <Slider value={s.sustainThresholdDb} min={8} max={40} onChange={(v) => set({ sustainThresholdDb: v })} format={(v) => `${v} dB`} />
+          </Field>
         </Panel>
 
         <Panel title="Puntuación">
