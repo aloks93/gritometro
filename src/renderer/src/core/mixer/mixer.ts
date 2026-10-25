@@ -37,6 +37,10 @@ export interface Strip {
   gate: { on: boolean; thresholdDb: number; rangeDb: number; attackMs: number; holdMs: number; releaseMs: number }
   eq: { on: boolean; bands: EqBand[] }
   comp: { on: boolean; thresholdDb: number; ratio: number; kneeDb: number; attackMs: number; releaseMs: number; makeupDb: number }
+  /** Narrow cuts against feedback (max MAX_NOTCHES) */
+  notches: Notch[]
+  /** Sidechain ducking: this strip drops while `sourceId` is active */
+  duck: Duck
   /** Time alignment between mics, ms */
   delayMs: number
   faderDb: number
@@ -46,6 +50,34 @@ export interface Strip {
   solo: boolean
   /** Bus ids this strip feeds (post-fader) */
   sends: string[]
+}
+
+export interface Notch {
+  hz: number
+  gainDb: number
+  q: number
+}
+
+export interface Duck {
+  on: boolean
+  /** Strip whose signal triggers the ducking (e.g. the voice) */
+  sourceId: string | null
+  /** Level the source must exceed, dBFS */
+  thresholdDb: number
+  /** How much this strip drops, dB (negative) */
+  amountDb: number
+  attackMs: number
+  releaseMs: number
+}
+
+export type MidiTargetKind = 'stripFader' | 'stripMute' | 'stripSolo' | 'stripPan' | 'busFader' | 'busMute'
+
+export interface MidiMapping {
+  /** "cc:<channel>:<number>" or "note:<channel>:<number>" */
+  key: string
+  kind: MidiTargetKind
+  /** Strip or bus id */
+  id: string
 }
 
 export type BusKind = 'out' | 'internal'
@@ -78,10 +110,12 @@ export interface MixerConfig {
   scenes: MixerScene[]
   /** Engine sample rate; null = device default */
   sampleRate: number | null
+  midi: MidiMapping[]
 }
 
 export const STRIP_COLORS = ['#ffb020', '#3fb6ff', '#5ee08a', '#ff6b8b', '#b48cff', '#ffe066', '#4dd6c9', '#ff9a5a']
 export const MAX_STRIPS = 8
+export const MAX_NOTCHES = 6
 export const FADER_MIN = -60
 export const FADER_MAX = 12
 
@@ -106,6 +140,8 @@ export function createStrip(index: number, overrides: Partial<Strip> = {}): Stri
     gate: { on: false, thresholdDb: -50, rangeDb: -60, attackMs: 2, holdMs: 80, releaseMs: 150 },
     eq: { on: true, bands: defaultEqBands() },
     comp: { on: false, thresholdDb: -20, ratio: 3, kneeDb: 6, attackMs: 10, releaseMs: 150, makeupDb: 0 },
+    notches: [],
+    duck: { on: false, sourceId: null, thresholdDb: -40, amountDb: -15, attackMs: 40, releaseMs: 500 },
     delayMs: 0,
     faderDb: 0,
     pan: 0,
@@ -127,7 +163,7 @@ export function defaultBuses(): Bus[] {
 }
 
 export function defaultMixer(): MixerConfig {
-  return { strips: [createStrip(0, { name: 'Micro 1' })], buses: defaultBuses(), scenes: [], sampleRate: 48000 }
+  return { strips: [createStrip(0, { name: 'Micro 1' })], buses: defaultBuses(), scenes: [], sampleRate: 48000, midi: [] }
 }
 
 /** Fills fields added in newer versions so old saves keep working */
@@ -136,7 +172,7 @@ export function mergeMixer(saved: Partial<MixerConfig> | null | undefined): Mixe
   if (!saved) return d
   const buses = Array.isArray(saved.buses) && saved.buses.length ? saved.buses.map((b) => ({ ...d.buses[0], ...b })) : d.buses
   const strips = Array.isArray(saved.strips) ? saved.strips.map((s, i) => normalizeStrip(s, i, buses)) : d.strips
-  return { ...d, ...saved, strips, buses, scenes: Array.isArray(saved.scenes) ? saved.scenes : [] }
+  return { ...d, ...saved, strips, buses, scenes: Array.isArray(saved.scenes) ? saved.scenes : [], midi: Array.isArray(saved.midi) ? saved.midi : [] }
 }
 
 function normalizeStrip(s: Partial<Strip>, i: number, buses: Bus[]): Strip {
@@ -150,6 +186,8 @@ function normalizeStrip(s: Partial<Strip>, i: number, buses: Bus[]): Strip {
     gate: { ...base.gate, ...s.gate },
     eq: { on: s.eq?.on ?? base.eq.on, bands },
     comp: { ...base.comp, ...s.comp },
+    notches: Array.isArray(s.notches) ? s.notches.slice(0, MAX_NOTCHES) : [],
+    duck: { ...base.duck, ...s.duck },
     sends: (s.sends ?? base.sends).filter((id) => buses.some((b) => b.id === id))
   }
 }
@@ -207,9 +245,10 @@ export function autoTrim(currentTrimDb: number, maxPeakDb: number, targetDb = -1
 
 // ---- Processing curves (for drawing)
 
-export function eqSections(strip: Pick<Strip, 'eq' | 'hpf'>, sampleRate: number): Biquad[] {
+export function eqSections(strip: Pick<Strip, 'eq' | 'hpf'> & { notches?: Notch[] }, sampleRate: number): Biquad[] {
   const out: Biquad[] = []
   if (strip.hpf.on) out.push(highPass(strip.hpf.hz, sampleRate))
+  for (const n of strip.notches ?? []) out.push(peaking(n.hz, n.gainDb, n.q, sampleRate))
   if (strip.eq.on) {
     for (const b of strip.eq.bands) {
       if (b.type === 'lowshelf') out.push(lowShelf(b.freq, b.gainDb, sampleRate))
@@ -221,7 +260,7 @@ export function eqSections(strip: Pick<Strip, 'eq' | 'hpf'>, sampleRate: number)
 }
 
 /** Combined HPF + EQ magnitude response at each frequency, dB */
-export function eqResponse(strip: Pick<Strip, 'eq' | 'hpf'>, freqs: number[], sampleRate = 48000): number[] {
+export function eqResponse(strip: Pick<Strip, 'eq' | 'hpf'> & { notches?: Notch[] }, freqs: number[], sampleRate = 48000): number[] {
   const sections = eqSections(strip, sampleRate)
   return freqs.map((f) => (sections.length ? Math.round(responseDb(sections, f, sampleRate) * 100) / 100 : 0))
 }
@@ -229,6 +268,161 @@ export function eqResponse(strip: Pick<Strip, 'eq' | 'hpf'>, freqs: number[], sa
 /** Log-spaced frequencies for curve drawing */
 export function logFreqs(n = 120, from = 20, to = 20000): number[] {
   return Array.from({ length: n }, (_, i) => from * Math.pow(to / from, i / (n - 1)))
+}
+
+// ---- Ducking
+
+/**
+ * One step of the ducking envelope: moves the target gain toward `amountDb` while the source
+ * is above threshold, back to 0 dB otherwise, with attack/release time constants.
+ */
+export function duckStep(currentDb: number, sourceDb: number, duck: Duck, dtMs: number): number {
+  const target = sourceDb > duck.thresholdDb ? duck.amountDb : 0
+  const tau = target < currentDb ? duck.attackMs : duck.releaseMs
+  const k = 1 - Math.exp(-dtMs / Math.max(1, tau))
+  const next = currentDb + (target - currentDb) * k
+  // Snap once inaudibly close so the gain settles exactly
+  return Math.abs(next - target) < 0.05 ? target : next
+}
+
+// ---- MIDI control
+
+export interface MidiMessage {
+  type: 'cc' | 'noteon' | 'noteoff'
+  channel: number
+  number: number
+  value: number
+}
+
+/** Decodes a raw MIDI message (status, data1, data2); null for anything we don't map */
+export function parseMidi(data: ArrayLike<number>): MidiMessage | null {
+  if (data.length < 3) return null
+  const status = data[0] & 0xf0
+  const channel = (data[0] & 0x0f) + 1
+  if (status === 0xb0) return { type: 'cc', channel, number: data[1], value: data[2] }
+  // Note-on with velocity 0 is a note-off by convention
+  if (status === 0x90) return { type: data[2] > 0 ? 'noteon' : 'noteoff', channel, number: data[1], value: data[2] }
+  if (status === 0x80) return { type: 'noteoff', channel, number: data[1], value: 0 }
+  return null
+}
+
+export function midiKey(m: MidiMessage): string {
+  return `${m.type === 'cc' ? 'cc' : 'note'}:${m.channel}:${m.number}`
+}
+
+export function describeMidiKey(key: string): string {
+  const [type, ch, num] = key.split(':')
+  return type === 'cc' ? `CC ${num} · canal ${ch}` : `Nota ${num} · canal ${ch}`
+}
+
+/** Applies a MIDI message to the mixer: continuous controls set values, buttons toggle */
+export function applyMidi(cfg: MixerConfig, m: MidiMessage): MixerConfig {
+  const key = midiKey(m)
+  const maps = cfg.midi.filter((x) => x.key === key)
+  if (maps.length === 0 || m.type === 'noteoff') return cfg
+  // Buttons toggle on press: note-on, or a CC jumping to its top half
+  const press = m.type === 'noteon' || m.value >= 64
+  let next = cfg
+  for (const map of maps) {
+    const v = m.value / 127
+    const strip = (fn: (s: Strip) => Strip): void => {
+      next = { ...next, strips: next.strips.map((s) => (s.id === map.id ? fn(s) : s)) }
+    }
+    const bus = (fn: (b: Bus) => Bus): void => {
+      next = { ...next, buses: next.buses.map((b) => (b.id === map.id ? fn(b) : b)) }
+    }
+    if (map.kind === 'stripFader') strip((s) => ({ ...s, faderDb: posToFader(v) }))
+    else if (map.kind === 'stripPan') strip((s) => ({ ...s, pan: Math.round((v * 2 - 1) * 50) / 50 }))
+    else if (map.kind === 'busFader') bus((b) => ({ ...b, faderDb: posToFader(v) }))
+    else if (press && map.kind === 'stripMute') strip((s) => ({ ...s, mute: !s.mute }))
+    else if (press && map.kind === 'stripSolo') strip((s) => ({ ...s, solo: !s.solo }))
+    else if (press && map.kind === 'busMute') bus((b) => ({ ...b, mute: !b.mute }))
+  }
+  return next
+}
+
+/** Replaces any mapping of the same target (or the same control) with the new one */
+export function learnMidi(cfg: MixerConfig, key: string, kind: MidiTargetKind, id: string): MixerConfig {
+  const midi = cfg.midi.filter((x) => !(x.kind === kind && x.id === id) && x.key !== key)
+  return { ...cfg, midi: [...midi, { key, kind, id }] }
+}
+
+// ---- Channel presets
+
+export interface StripPreset {
+  id: string
+  name: string
+  apply: Pick<Strip, 'hpf' | 'gate' | 'eq' | 'comp'>
+}
+
+const band = (type: EqBand['type'], freq: number, gainDb: number, q = 1): EqBand => ({ type, freq, gainDb, q })
+const gateOff = (): Strip['gate'] => ({ on: false, thresholdDb: -50, rangeDb: -60, attackMs: 2, holdMs: 80, releaseMs: 150 })
+const compOff = (): Strip['comp'] => ({ on: false, thresholdDb: -20, ratio: 3, kneeDb: 6, attackMs: 10, releaseMs: 150, makeupDb: 0 })
+
+export const STRIP_PRESETS: StripPreset[] = [
+  {
+    id: 'clean',
+    name: 'Limpio (sin procesar)',
+    apply: { hpf: { on: false, hz: 80 }, gate: gateOff(), eq: { on: true, bands: defaultEqBands() }, comp: compOff() }
+  },
+  {
+    id: 'speech',
+    name: 'Voz hablada',
+    apply: {
+      hpf: { on: true, hz: 90 },
+      gate: { on: true, thresholdDb: -52, rangeDb: -20, attackMs: 2, holdMs: 120, releaseMs: 200 },
+      eq: { on: true, bands: [band('lowshelf', 150, -2), band('peaking', 350, -2.5, 1.2), band('peaking', 3500, 3, 0.9), band('highshelf', 10000, 2)] },
+      comp: { on: true, thresholdDb: -20, ratio: 3, kneeDb: 6, attackMs: 8, releaseMs: 120, makeupDb: 4 }
+    }
+  },
+  {
+    id: 'podcast',
+    name: 'Podcast / radio',
+    apply: {
+      hpf: { on: true, hz: 80 },
+      gate: { on: true, thresholdDb: -48, rangeDb: -25, attackMs: 1, holdMs: 150, releaseMs: 250 },
+      eq: { on: true, bands: [band('lowshelf', 120, 2), band('peaking', 400, -3, 1), band('peaking', 4000, 3.5, 1), band('highshelf', 12000, 2.5)] },
+      comp: { on: true, thresholdDb: -24, ratio: 4, kneeDb: 4, attackMs: 5, releaseMs: 100, makeupDb: 7 }
+    }
+  },
+  {
+    id: 'singing',
+    name: 'Voz cantada',
+    apply: {
+      hpf: { on: true, hz: 100 },
+      gate: gateOff(),
+      eq: { on: true, bands: [band('lowshelf', 120, -1.5), band('peaking', 300, -2, 1.4), band('peaking', 5000, 2.5, 0.8), band('highshelf', 12000, 3)] },
+      comp: { on: true, thresholdDb: -18, ratio: 2.5, kneeDb: 10, attackMs: 15, releaseMs: 200, makeupDb: 3 }
+    }
+  },
+  {
+    id: 'acoustic',
+    name: 'Instrumento acústico',
+    apply: {
+      hpf: { on: true, hz: 60 },
+      gate: gateOff(),
+      eq: { on: true, bands: [band('lowshelf', 100, -1), band('peaking', 250, -2, 1), band('peaking', 3000, 1.5, 0.8), band('highshelf', 9000, 2)] },
+      comp: { on: true, thresholdDb: -22, ratio: 2, kneeDb: 10, attackMs: 25, releaseMs: 250, makeupDb: 2 }
+    }
+  },
+  {
+    id: 'music',
+    name: 'Música de fondo',
+    apply: {
+      hpf: { on: false, hz: 40 },
+      gate: gateOff(),
+      // A dip where the voice lives leaves room for whoever is talking over it
+      eq: { on: true, bands: [band('lowshelf', 100, 0), band('peaking', 2500, -3, 0.7), band('peaking', 4000, 0), band('highshelf', 8000, 0)] },
+      comp: compOff()
+    }
+  }
+]
+
+/** Applies a preset's processing; routing, levels and name stay as they were */
+export function applyPreset(strip: Strip, presetId: string): Strip {
+  const p = STRIP_PRESETS.find((x) => x.id === presetId)
+  if (!p) return strip
+  return { ...strip, ...(JSON.parse(JSON.stringify(p.apply)) as StripPreset['apply']) }
 }
 
 // ---- Routing checks
@@ -245,6 +439,8 @@ export function routingWarnings(cfg: Pick<MixerConfig, 'strips' | 'buses'>): Rou
     const outs = s.sends.map((id) => cfg.buses.find((b) => b.id === id)).filter((b): b is Bus => !!b && b.kind === 'out' && !b.mute)
     if (outs.length > 0) warnings.push({ stripId: s.id, message: `${s.name} suena por ${outs.map((b) => b.label).join(', ')}: usa auriculares o se acoplará con altavoces.` })
     if (s.sends.length === 0) warnings.push({ stripId: s.id, message: `${s.name} no está enviada a ningún bus.` })
+    if (s.duck.on && (!s.duck.sourceId || !cfg.strips.some((x) => x.id === s.duck.sourceId && x.id !== s.id)))
+      warnings.push({ stripId: s.id, message: `${s.name}: el ducking no tiene una entrada que lo active.` })
     if (s.trimDb + s.faderDb > 24) warnings.push({ stripId: s.id, message: `${s.name} tiene mucha ganancia digital: sube mejor el preamplificador.` })
   }
   return warnings
@@ -267,10 +463,10 @@ export function loadScene(cfg: MixerConfig, sceneId: string): MixerConfig {
 const MIXER_APP = 'gritometro-mezclador'
 
 export function serializeMixer(cfg: MixerConfig): string {
-  return JSON.stringify({ app: MIXER_APP, version: 1, strips: cfg.strips, buses: cfg.buses, scenes: cfg.scenes }, null, 2)
+  return JSON.stringify({ app: MIXER_APP, version: 1, strips: cfg.strips, buses: cfg.buses, scenes: cfg.scenes, midi: cfg.midi }, null, 2)
 }
 
-export function parseMixer(text: string): Pick<MixerConfig, 'strips' | 'buses' | 'scenes'> {
+export function parseMixer(text: string): Pick<MixerConfig, 'strips' | 'buses' | 'scenes' | 'midi'> {
   let raw: unknown
   try {
     raw = JSON.parse(text)
@@ -280,7 +476,7 @@ export function parseMixer(text: string): Pick<MixerConfig, 'strips' | 'buses' |
   const r = raw as { app?: string; strips?: unknown; buses?: unknown; scenes?: unknown }
   if (!r || r.app !== MIXER_APP || !Array.isArray(r.strips)) throw new Error('No es una configuración del mezclador.')
   const merged = mergeMixer(r as Partial<MixerConfig>)
-  return { strips: merged.strips.slice(0, MAX_STRIPS), buses: merged.buses, scenes: merged.scenes }
+  return { strips: merged.strips.slice(0, MAX_STRIPS), buses: merged.buses, scenes: merged.scenes, midi: merged.midi }
 }
 
 function structuredCloneSafe<T>(v: T): T {
