@@ -1094,3 +1094,91 @@ kbd {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- markers and measurement session ---------- */
+.st-markers {
+  margin-top: 0.5em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+}
+.st-markers ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.st-markers li {
+  display: grid;
+  grid-template-columns: auto 1fr auto 22px;
+  gap: 8px;
+  align-items: center;
+  padding: 2px 6px;
+  border-left: 3px solid var(--st-ref);
+  background: #0f1115;
+}
+.st-markers li.clip {
+  border-left-color: var(--st-bad);
+}
+.st-markers li input {
+  font-size: 12px;
+  padding: 2px 6px;
+}
+.st-tc {
+  font: 12px var(--st-mono);
+  color: var(--st-accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+.st-tc:hover {
+  text-decoration: underline;
+}
+.st-session-meta {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 0.6em;
+}
+.st-session-meta label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  font-size: 0.8em;
+  color: var(--st-muted);
+}
+.st-session-meta label.wide {
+  grid-column: 1 / -1;
+}
+.st-session-meta textarea {
+  background: #0f1115;
+  border: 1px solid var(--st-border);
+  color: var(--st-text);
+  border-radius: 4px;
+  padding: 0.4em 0.6em;
+  font: 13px var(--font-body);
+  resize: vertical;
+}
+.st-conclusions {
+  margin: 0;
+  padding: 0.5em 0.8em 0.5em 1.8em;
+  background: #0f1115;
+  border: 1px solid var(--st-border);
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.st-conclusions li {
+  margin: 2px 0;
+}
+.st-opened {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  padding: 0.6em;
+  border: 1px solid var(--st-ref);
+  border-radius: 4px;
+}

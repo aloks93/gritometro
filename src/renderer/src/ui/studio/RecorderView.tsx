@@ -1,11 +1,26 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { audioEngine, joinChunks } from '../../core/audio/AudioEngine'
 import { MIN_DB } from '../../core/audio/LevelAnalyzer'
+import { activeProfile } from '../../core/audio/AudioConfig'
 import { decodeWav, encodeWav, envelope, pcmRms, pcmStats, type WavFormat } from '../../core/studio/analysis'
+import { encodeFlac } from '../../core/studio/flac'
 import { LoudnessMeter, measureLoudness, type LoudnessReading } from '../../core/studio/loudness'
+import {
+  buildSession,
+  buildSessionReportHtml,
+  clipMarkers,
+  markersCsv,
+  parseMeasurementSession,
+  serializeMeasurementSession,
+  sessionConclusions,
+  timecode,
+  withClipMarkers,
+  type Marker,
+  type MeasurementSession
+} from '../../core/studio/session'
 import { newId } from '../../core/players/players'
 import { useEngineState, useKey, useReading } from '../hooks'
-import { openBinaryFiles, saveFile, toBase64 } from '../storage'
+import { openBinaryFiles, openTextFile, saveFile, saveHtmlAsPdf, toBase64 } from '../storage'
 import { useStore } from '../store'
 import { onPlaybackChange, playbackPosition, playTake, stopPlayback } from './playback'
 import { BarMeter, fitCanvas, fmtDb, fmtTime } from './widgets'
@@ -18,7 +33,7 @@ export interface Recording {
   pcm: Float32Array
   sampleRate: number
   createdAt: string
-  markers: number[]
+  markers: Marker[]
   loudness: LoudnessReading
   peakDb: number
   rmsDb: number
@@ -64,6 +79,8 @@ export function normalizeGainDb(r: { loudness: LoudnessReading }, targetLufs: nu
   if (r.loudness.integrated <= -70) return 0
   return Math.min(targetLufs - r.loudness.integrated, ceilingDb - r.loudness.truePeakDb)
 }
+
+const setMarkers = (id: string, fn: (m: Marker[]) => Marker[]): void => setRecordings((all) => all.map((x) => (x.id === id ? { ...x, markers: fn(x.markers) } : x)))
 
 function safeFileName(name: string): string {
   return name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'grabacion'
@@ -115,11 +132,12 @@ export function RecorderView(): JSX.Element {
     const pcm = joinChunks(s.chunks)
     if (pcm.length > 0) {
       const n = recordings.filter((x) => !x.imported).length + 1
+      const user: Marker[] = s.markers.map((t, i) => ({ t: Math.round(t * 1000) / 1000, label: `Marcador ${i + 1}`, kind: 'user' }))
       const item: Recording = {
         id: newId('rec'),
         name: `Grabación ${n}`,
         createdAt: new Date().toISOString(),
-        markers: s.markers,
+        markers: withClipMarkers(user, clipMarkers(pcm, s.sampleRate)),
         ...analyze(pcm, s.sampleRate, s.meter?.reading())
       }
       setRecordings((all) => [item, ...all])
@@ -189,7 +207,14 @@ export function RecorderView(): JSX.Element {
       setMsg(`Analizando ${f.name}…`)
       // Yield so the message paints before the (blocking) loudness analysis
       await new Promise((r) => setTimeout(r, 30))
-      const item: Recording = { id: newId('rec'), name: f.name.replace(/\.wav$/i, ''), createdAt: new Date().toISOString(), markers: [], imported: true, ...analyze(decoded.pcm, decoded.sampleRate) }
+      const item: Recording = {
+        id: newId('rec'),
+        name: f.name.replace(/\.wav$/i, ''),
+        createdAt: new Date().toISOString(),
+        markers: clipMarkers(decoded.pcm, decoded.sampleRate),
+        imported: true,
+        ...analyze(decoded.pcm, decoded.sampleRate)
+      }
       setRecordings((all) => [item, ...all])
     }
     setMsg(bad.length ? `No se pudieron leer: ${bad.join(', ')} (solo WAV PCM 8/16/24/32 bits o float)` : '')
@@ -207,6 +232,16 @@ export function RecorderView(): JSX.Element {
     }
     const path = await saveFile(`${safeFileName(r.name)}${suffix}.wav`, toBase64(encodeWav(pcm, r.sampleRate, format)), 'base64')
     if (path) setMsg(`Guardado en ${path}`)
+  }
+
+  /** Lossless and ~half the size of WAV; 16-bit WAV setting → 16-bit FLAC, otherwise 24 */
+  const exportFlac = async (r: Recording): Promise<void> => {
+    const bits = format === 16 ? 16 : 24
+    setMsg('Codificando FLAC…')
+    await new Promise((res) => setTimeout(res, 30))
+    const flac = encodeFlac([r.pcm], r.sampleRate, bits)
+    const path = await saveFile(`${safeFileName(r.name)}.flac`, toBase64(flac.buffer as ArrayBuffer), 'base64')
+    setMsg(path ? `FLAC ${bits} bits guardado en ${path} (${Math.round(flac.length / 1024)} KB, ${Math.round((flac.length / ((r.pcm.length * bits) / 8)) * 100)} % del WAV)` : '')
   }
 
   const live = rec?.live
@@ -265,6 +300,8 @@ export function RecorderView(): JSX.Element {
         {msg && <p className="st-small">{msg}</p>}
       </section>
 
+      <SessionPanel list={list} onMsg={setMsg} />
+
       {list.length > 0 && (
         <section className="st-panel">
           <header className="st-panel-head">
@@ -272,7 +309,7 @@ export function RecorderView(): JSX.Element {
             <span className="st-muted st-small">Normalizar = llevar a {target} LUFS sin pasar de −1 dBTP (objetivo del Monitor)</span>
           </header>
           {list.map((r) => (
-            <RecordingRow key={r.id} r={r} playing={playing === r.id} onExport={(n) => exportWav(r, n)} target={target} />
+            <RecordingRow key={r.id} r={r} playing={playing === r.id} onExport={(n) => exportWav(r, n)} onFlac={() => exportFlac(r)} target={target} />
           ))}
         </section>
       )}
@@ -280,7 +317,19 @@ export function RecorderView(): JSX.Element {
   )
 }
 
-function RecordingRow({ r, playing, onExport, target }: { r: Recording; playing: boolean; onExport: (normalized: boolean) => void; target: number }): JSX.Element {
+function RecordingRow({
+  r,
+  playing,
+  onExport,
+  onFlac,
+  target
+}: {
+  r: Recording
+  playing: boolean
+  onExport: (normalized: boolean) => void
+  onFlac: () => void
+  target: number
+}): JSX.Element {
   const duration = r.pcm.length / r.sampleRate
   const [loop, setLoop] = useState(false)
   const play = (offset = 0): void => {
@@ -309,6 +358,9 @@ function RecordingRow({ r, playing, onExport, target }: { r: Recording; playing:
         </button>
         <button className="st-btn" onClick={() => onExport(true)} title={`Ganancia ${gain >= 0 ? '+' : ''}${gain.toFixed(1)} dB`} disabled={l.integrated <= -70}>
           WAV normalizado
+        </button>
+        <button className="st-btn" onClick={onFlac} title="Sin pérdida, ocupa menos que el WAV">
+          FLAC
         </button>
         <button
           className="st-btn ghost"
@@ -339,9 +391,181 @@ function RecordingRow({ r, playing, onExport, target }: { r: Recording; playing:
         </span>
         {r.clippedSamples > 0 && <span className="bad">{r.clippedSamples} muestras saturadas</span>}
         {Math.abs(r.dcOffset) > 0.01 && <span className="warn">DC offset {r.dcOffset}</span>}
-        {r.markers.length > 0 && <span>Marcadores: {r.markers.map((m) => fmtTime(m)).join(', ')}</span>}
       </div>
+      <MarkerList r={r} duration={duration} onPlay={(t) => play(Math.max(0, t - 0.5))} />
     </div>
+  )
+}
+
+/** Markers with timecode: rename, jump to, delete, add at the playhead */
+function MarkerList({ r, duration, onPlay }: { r: Recording; duration: number; onPlay: (t: number) => void }): JSX.Element {
+  const addHere = (): void => {
+    const pos = playbackPosition()
+    const t = pos?.id === r.id ? pos.seconds : 0
+    const n = r.markers.filter((m) => m.kind === 'user').length + 1
+    setMarkers(r.id, (ms) => [...ms, { t: Math.round(t * 1000) / 1000, label: `Marcador ${n}`, kind: 'user' as const }].sort((a, b) => a.t - b.t))
+  }
+  const clips = r.markers.filter((m) => m.kind === 'clip').length
+  return (
+    <div className="st-markers">
+      <div className="st-row">
+        <b className="st-box-title">Marcadores ({r.markers.length})</b>
+        {clips > 0 && <span className="st-small bad">{clips} saturaciones marcadas</span>}
+        <span className="st-grow" />
+        <button className="st-btn ghost" onClick={addHere} title="Añade un marcador donde va la reproducción (o al inicio)">
+          + Marcador aquí
+        </button>
+      </div>
+      {r.markers.length > 0 && (
+        <ul>
+          {r.markers.map((m, i) => (
+            <li key={`${m.t}-${i}`} className={m.kind}>
+              <button className="st-tc" onClick={() => onPlay(m.t)} title="Escuchar desde aquí">
+                {timecode(m.t)}
+              </button>
+              <input value={m.label} onChange={(e) => setMarkers(r.id, (ms) => ms.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
+              <span className="st-small st-muted">{((m.t / Math.max(duration, 0.001)) * 100).toFixed(0)} %</span>
+              <button className="st-x" onClick={() => setMarkers(r.id, (ms) => ms.filter((_, j) => j !== i))} title="Quitar">
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Who/where/what of the session, plus the session file and its PDF report */
+function SessionPanel({ list, onMsg }: { list: Recording[]; onMsg: (m: string) => void }): JSX.Element {
+  const { data, update } = useStore()
+  const engine = useEngineState()
+  const meta = data.studio.sessionMeta
+  const [opened, setOpened] = useState<MeasurementSession | null>(null)
+  const setMeta = (p: Partial<typeof meta>): void => update('studio', (s) => ({ ...s, sessionMeta: { ...s.sessionMeta, ...p } }))
+
+  const current = (): MeasurementSession => {
+    const p = activeProfile(data.audio)
+    return buildSession({
+      meta,
+      profile: { name: p.name, deviceLabel: engine.status === 'running' ? engine.label : undefined, mode: data.audio.mode, gainDb: p.gainDb, splOffset: p.splOffset, noiseFloorDb: p.noiseFloorDb },
+      calibration: data.studio.calibrations[p.id]?.find((h) => h.method !== 'loopback'),
+      takes: [...list].reverse().map((r) => ({
+        name: r.name,
+        durationS: r.pcm.length / r.sampleRate,
+        sampleRate: r.sampleRate,
+        lufs: r.loudness.integrated,
+        truePeakDb: r.loudness.truePeakDb,
+        peakDb: r.peakDb,
+        rmsDb: r.rmsDb,
+        clippedSamples: r.clippedSamples,
+        markers: r.markers
+      })),
+      candidates: data.studio.candidates
+    })
+  }
+  const stamp = (): string => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')
+  const baseName = (s: MeasurementSession): string => safeFileName(s.meta.title || 'sesion') + `-${stamp()}`
+
+  const saveJson = async (): Promise<void> => {
+    const s = current()
+    const path = await saveFile(`${baseName(s)}.json`, serializeMeasurementSession(s))
+    if (path) onMsg(`Sesión guardada en ${path} (metadatos y resultados; el audio se exporta aparte en WAV/FLAC).`)
+  }
+  const pdf = async (s: MeasurementSession): Promise<void> => {
+    const path = await saveHtmlAsPdf(`${baseName(s)}.pdf`, buildSessionReportHtml(s))
+    if (path) onMsg(`Informe guardado en ${path}`)
+  }
+  const open = async (): Promise<void> => {
+    const text = await openTextFile(['json'])
+    if (!text) return
+    try {
+      setOpened(parseMeasurementSession(text))
+    } catch (err) {
+      onMsg(err instanceof Error ? err.message : String(err))
+    }
+  }
+  const csv = async (): Promise<void> => {
+    const path = await saveFile(`marcadores-${stamp()}.csv`, markersCsv([...list].reverse()))
+    if (path) onMsg(`Marcadores exportados a ${path}`)
+  }
+
+  const conclusions = sessionConclusions(current())
+  return (
+    <section className="st-panel">
+      <header className="st-panel-head">
+        <h2>Sesión de medición</h2>
+        <div className="st-row">
+          <button className="st-btn" onClick={csv} disabled={!list.some((r) => r.markers.length)}>
+            Marcadores CSV
+          </button>
+          <button className="st-btn" onClick={saveJson}>
+            Guardar sesión
+          </button>
+          <button className="st-btn primary" onClick={() => void pdf(current())}>
+            Informe PDF
+          </button>
+          <button className="st-btn ghost" onClick={open}>
+            Abrir sesión…
+          </button>
+        </div>
+      </header>
+      <div className="st-session-meta">
+        <label>
+          Título
+          <input value={meta.title} placeholder="Prueba de micrófonos — sala de ensayo" onChange={(e) => setMeta({ title: e.target.value })} />
+        </label>
+        <label>
+          Operador
+          <input value={meta.operator} onChange={(e) => setMeta({ operator: e.target.value })} />
+        </label>
+        <label>
+          Lugar
+          <input value={meta.location} onChange={(e) => setMeta({ location: e.target.value })} />
+        </label>
+        <label className="wide">
+          Notas
+          <textarea rows={2} value={meta.notes} placeholder="Posición de los micros, distancia, preamplificador, condiciones de la sala…" onChange={(e) => setMeta({ notes: e.target.value })} />
+        </label>
+      </div>
+      <ul className="st-conclusions">
+        {conclusions.map((c) => (
+          <li key={c}>{c}</li>
+        ))}
+      </ul>
+      <p className="st-muted st-small">
+        La sesión reúne perfil de audio, calibración usada, ganancia, ruido de fondo, tomas con sus marcadores y los micrófonos del Comparador, con una recomendación final.
+      </p>
+      {opened && (
+        <div className="st-opened">
+          <div className="st-row">
+            <b>{opened.meta.title || 'Sesión sin título'}</b>
+            <span className="st-small st-muted">
+              {new Date(opened.createdAt).toLocaleString('es')}
+              {opened.meta.operator ? ` · ${opened.meta.operator}` : ''}
+              {opened.meta.location ? ` · ${opened.meta.location}` : ''}
+            </span>
+            <span className="st-grow" />
+            <button className="st-btn" onClick={() => void pdf(opened)}>
+              PDF de esta sesión
+            </button>
+            <button className="st-btn ghost" onClick={() => setOpened(null)}>
+              ✕
+            </button>
+          </div>
+          <p className="st-small">
+            Perfil {opened.profile.name} ({opened.profile.deviceLabel ?? 'entrada predeterminada'}) · ganancia {opened.profile.gainDb} dB · ruido {opened.profile.noiseFloorDb} dBFS ·{' '}
+            {opened.calibration ? `calibrado (offset ${opened.calibration.offsetDb} dB)` : 'sin calibrar'} · {opened.takes.length} tomas · {opened.candidates.filter((c) => c.metrics).length}{' '}
+            micrófonos medidos
+          </p>
+          <ul className="st-conclusions">
+            {sessionConclusions(opened).map((c) => (
+              <li key={c}>{c}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -365,8 +589,10 @@ function WaveformSeek({ r, duration, onSeek }: { r: Recording; duration: number;
         g.fillStyle = v >= 0.99 ? css.getPropertyValue('--st-bad') : css.getPropertyValue('--st-accent')
         g.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 0.3), bh)
       })
-      g.fillStyle = css.getPropertyValue('--st-ref')
-      for (const m of r.markers) g.fillRect((m / duration) * w - 1, 0, 2 * devicePixelRatio, h)
+      for (const m of r.markers) {
+        g.fillStyle = css.getPropertyValue(m.kind === 'clip' ? '--st-bad' : '--st-ref')
+        g.fillRect((m.t / duration) * w - 1, 0, 2 * devicePixelRatio, h)
+      }
       const pos = playbackPosition()
       if (pos?.id === r.id) {
         g.fillStyle = css.getPropertyValue('--st-text')

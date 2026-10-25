@@ -1,5 +1,6 @@
 import type { TakeMetrics, WavFormat } from './analysis'
 import type { CalibrationRecord, ToleranceClass } from './calibration'
+import { defaultSessionMeta, type SessionMeta } from './session'
 import type { TimeWeighting, Weighting } from './loudness'
 
 export interface MicCandidate {
@@ -54,6 +55,8 @@ export interface StudioData {
   calibrations: Record<string, CalibrationRecord[]>
   /** IEC 61672 class used to judge calibration checks */
   toleranceClass: ToleranceClass
+  /** Who/where/what of the current measurement session */
+  sessionMeta: SessionMeta
 }
 
 export function defaultStudioPrefs(): StudioPrefs {
@@ -81,7 +84,8 @@ export function defaultStudio(): StudioData {
     referenceId: null,
     prefs: defaultStudioPrefs(),
     calibrations: {},
-    toleranceClass: 2
+    toleranceClass: 2,
+    sessionMeta: defaultSessionMeta()
   }
 }
 
@@ -95,7 +99,8 @@ export function mergeStudio(saved: Partial<StudioData> | null | undefined): Stud
     candidates: Array.isArray(s.candidates) ? s.candidates : [],
     prefs: { ...d.prefs, ...(s.prefs ?? {}) },
     calibrations: s.calibrations && typeof s.calibrations === 'object' ? s.calibrations : {},
-    toleranceClass: s.toleranceClass === 1 ? 1 : 2
+    toleranceClass: s.toleranceClass === 1 ? 1 : 2,
+    sessionMeta: { ...d.sessionMeta, ...(s.sessionMeta ?? {}) }
   }
 }
 
