@@ -4,6 +4,7 @@ import { listInputs, type InputDevice } from '../../core/audio/MicrophoneService
 import {
   applyMidi,
   applyPreset,
+  addAuxBus,
   autoTrim,
   createStrip,
   defaultEqBands,
@@ -17,11 +18,13 @@ import {
   loadScene,
   logFreqs,
   MAX_NOTCHES,
+  MAX_AUX_BUSES,
   MAX_STRIPS,
   midiKey,
   parseMidi,
   parseMixer,
   posToFader,
+  removeBus,
   routingWarnings,
   saveScene,
   saveUserPreset,
@@ -314,6 +317,14 @@ export function MixerView(): JSX.Element {
             <button className="st-btn" disabled={cfg.strips.length >= MAX_STRIPS} onClick={addStrip}>
               + Entrada
             </button>
+            <button
+              className="st-btn"
+              disabled={cfg.buses.filter((b) => b.custom).length >= MAX_AUX_BUSES}
+              onClick={() => setCfg((m) => addAuxBus(m))}
+              title="Bus auxiliar C (monitores de escenario): recibe las entradas antes de su fader, para que el monitor no cambie al mover la mezcla"
+            >
+              + Bus C
+            </button>
           </div>
         </header>
         <div className="st-row">
@@ -403,7 +414,17 @@ export function MixerView(): JSX.Element {
         ))}
         <div className="st-console-sep" />
         {cfg.buses.map((b) => (
-          <BusView key={b.id} b={b} outputs={outputs} on={on} recording={mixerEngine.isRecording(b.id)} onChange={(p) => patchBus(b.id, p)} onRec={() => toggleRec(b)} reg={reg} />
+          <BusView
+            key={b.id}
+            b={b}
+            outputs={outputs}
+            on={on}
+            recording={mixerEngine.isRecording(b.id)}
+            onChange={(p) => patchBus(b.id, p)}
+            onRec={() => toggleRec(b)}
+            onRemove={() => confirm(`¿Quitar el bus ${b.label}? Las entradas dejarán de enviarle señal.`) && setCfg((m) => removeBus(m, b.id))}
+            reg={reg}
+          />
         ))}
       </section>
 
@@ -570,7 +591,7 @@ function StripView({
         {buses.map((b) => (
           <button
             key={b.id}
-            className={`${s.sends.includes(b.id) ? 'on' : ''} ${b.kind}`}
+            className={`${s.sends.includes(b.id) ? 'on' : ''} ${b.kind} ${b.custom ? 'aux' : ''}`}
             onClick={() => onChange({ sends: s.sends.includes(b.id) ? s.sends.filter((x) => x !== b.id) : [...s.sends, b.id] })}
             title={`${s.sends.includes(b.id) ? 'Quitar de' : 'Enviar a'} ${b.label} · ${b.name}`}
           >
@@ -609,6 +630,7 @@ function BusView({
   recording,
   onChange,
   onRec,
+  onRemove,
   reg
 }: {
   b: Bus
@@ -617,6 +639,7 @@ function BusView({
   recording: boolean
   onChange: (p: Partial<Bus>) => void
   onRec: () => void
+  onRemove: () => void
   reg: (k: string) => (el: HTMLElement | null) => void
 }): JSX.Element {
   const [prefs, setPrefs] = useStudioPrefs()
@@ -626,6 +649,11 @@ function BusView({
       <div className="st-strip-top">
         <b className="st-bus-label">{b.label}</b>
         <input className="st-strip-name" value={b.name} onChange={(e) => onChange({ name: e.target.value })} />
+        {b.custom && (
+          <button className="st-x" onClick={onRemove} title="Quitar bus">
+            ×
+          </button>
+        )}
       </div>
       {b.kind === 'out' ? (
         <select value={b.deviceId ?? ''} onChange={(e) => onChange({ deviceId: e.target.value || null })} title="Dispositivo de salida">
@@ -646,6 +674,11 @@ function BusView({
         <button className={b.mono ? 'on' : ''} onClick={() => onChange({ mono: !b.mono })} title="Sumar a mono">
           MONO
         </button>
+        {b.custom && (
+          <button className={b.pre ? 'on' : ''} onClick={() => onChange({ pre: !b.pre })} title={b.pre ? 'Pre-fader: el monitor no cambia al mover los faders' : 'Post-fader: sigue a la mezcla'}>
+            {b.pre ? 'PRE' : 'POST'}
+          </button>
+        )}
       </div>
       <div className="st-bus-gr" ref={reg(`${b.id}:gr`)} />
       <div className="st-fx-row">

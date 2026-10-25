@@ -233,8 +233,8 @@ export function StudioShell({ standalone = false }: { standalone?: boolean }): J
             ⛶
           </button>
           {!standalone && (
-            <button className="st-btn" onClick={exit} title="Ctrl+Shift+S">
-              Salir del modo estudio
+            <button className="st-btn" onClick={exit} title="Salir del modo estudio (Ctrl+Shift+S)">
+              Salir
             </button>
           )}
         </div>

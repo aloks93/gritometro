@@ -99,6 +99,42 @@ export interface Bus {
   mono: boolean
   /** Brickwall-style limiter at −1 dBFS */
   limiter: boolean
+  /** Aux (C) buses: strips send before their fader (stage monitors), honouring mute only */
+  pre?: boolean
+  /** User-added bus (aux C), can be removed */
+  custom?: boolean
+}
+
+export const MAX_AUX_BUSES = 4
+
+/** Adds an aux bus C1, C2…: a physical output fed pre-fader, like a console's monitor sends */
+export function addAuxBus(cfg: MixerConfig): MixerConfig {
+  const aux = cfg.buses.filter((b) => b.custom)
+  if (aux.length >= MAX_AUX_BUSES) return cfg
+  let n = 1
+  while (cfg.buses.some((b) => b.id === `C${n}`)) n++
+  const bus: Bus = { id: `C${n}`, label: `C${n}`, name: `Monitor ${n}`, kind: 'out', deviceId: null, faderDb: 0, mute: false, mono: true, limiter: true, pre: true, custom: true }
+  return { ...cfg, buses: [...cfg.buses, bus] }
+}
+
+/** Removes a user-added bus and every send/monitor/MIDI reference to it */
+export function removeBus(cfg: MixerConfig, id: string): MixerConfig {
+  const bus = cfg.buses.find((b) => b.id === id)
+  if (!bus?.custom) return cfg
+  const buses = cfg.buses.filter((b) => b.id !== id)
+  return {
+    ...cfg,
+    buses,
+    strips: cfg.strips.map((s) => ({ ...s, sends: s.sends.filter((x) => x !== id) })),
+    midi: cfg.midi.filter((m) => m.id !== id),
+    monitor: cfg.monitor.source === id ? { ...cfg.monitor, source: buses[0].id } : cfg.monitor
+  }
+}
+
+/** Linear send level of a strip into a bus: pre-fader buses ignore the fader and solo, not mute */
+export function sendGain(strip: Strip, bus: Pick<Bus, 'id' | 'pre'>): number {
+  if (!strip.sends.includes(bus.id)) return 0
+  return bus.pre && strip.mute ? 0 : 1
 }
 
 export interface MixerScene {

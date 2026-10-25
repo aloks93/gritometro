@@ -355,3 +355,13 @@
     display: none;
   }
 }
+@media (max-width: 1700px) {
+  .st-brand span:not(.st-logo) {
+    display: none;
+  }
+}
+.st-table td.st-notes-cell {
+  white-space: normal;
+  min-width: 220px;
+  max-width: 380px;
+}

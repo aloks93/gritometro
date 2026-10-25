@@ -1238,3 +1238,65 @@ kbd {
   border-radius: 6px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
+
+/* ---------- recommendation per use ---------- */
+.st-winners {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+}
+.st-winner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 10px;
+  background: #0f1115;
+  border: 1px solid var(--st-border);
+  border-radius: 6px;
+  color: var(--st-text);
+  cursor: pointer;
+  font: inherit;
+}
+.st-winner.on {
+  border-color: var(--st-accent);
+  box-shadow: 0 0 0 1px var(--st-accent) inset;
+}
+.st-winner small {
+  color: var(--st-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72em;
+}
+.st-winner b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-winner i {
+  font: 11px var(--st-mono);
+  font-style: normal;
+  color: var(--st-accent);
+}
+.st-breakdown {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  min-width: 180px;
+}
+.st-breakdown span {
+  background: #262b33;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.st-breakdown i {
+  display: block;
+  height: 100%;
+  background: var(--st-ok);
+}
+.st-breakdown i.warn {
+  background: var(--st-warn);
+}
+.st-breakdown i.bad {
+  background: var(--st-bad);
+}

@@ -1,4 +1,5 @@
 import { BAND_CENTERS, technicalScore } from './analysis'
+import { winnersByScenario } from './scenario'
 import type { MicCandidate } from './studio'
 
 // Printable comparison report (HTML → PDF in the main process). Pure string building.
@@ -38,6 +39,14 @@ function chartSvg(candidates: MicCandidate[]): string {
     parts.push(`<polyline fill="none" stroke="${REPORT_COLORS[ci % REPORT_COLORS.length]}" stroke-width="2.2" points="${pts}"/>`)
   })
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" font-size="10" font-family="Segoe UI, sans-serif" fill="#555">${parts.join('')}</svg>`
+}
+
+/** Best mic per use (voice, singing, shouting…) with its score and lead */
+function scenarioTable(measured: MicCandidate[]): string {
+  const w = winnersByScenario(measured)
+  if (w.length === 0) return ''
+  const rows = w.map((x) => `<tr><td>${escapeHtml(x.scenario.name)}</td><td><b>${escapeHtml(x.best.name)}</b></td><td>${x.score}/100</td><td>${x.margin === null ? '—' : x.margin === 0 ? 'empate' : `+${x.margin}`}</td></tr>`).join('')
+  return `<h2>Mejor micrófono por uso</h2><table><thead><tr><th>Uso</th><th>Recomendado</th><th>Puntos</th><th>Ventaja sobre el 2.º</th></tr></thead><tbody>${rows}</tbody></table>`
 }
 
 export interface ReportOptions {
@@ -116,6 +125,7 @@ export function buildReportHtml(all: MicCandidate[], opts: ReportOptions = {}): 
 <h2>Resultados</h2>
 <table><thead><tr><th>#</th><th>Micrófono</th><th>Puntos</th><th>SNR</th><th>Ruido dBFS</th><th>Nivel dBFS</th><th>LUFS</th><th>Pico dBTP</th><th>Cresta dB</th><th>Brillo</th><th>Graves/Medios/Agudos %</th><th>Clips</th><th>A ciegas</th></tr></thead>
 <tbody>${rows || '<tr><td colspan="13">Sin tomas medidas.</td></tr>'}</tbody></table>
+${scenarioTable(measured)}
 <h2>Respuesta en frecuencia (tercios de octava, normalizada)</h2>
 ${chartSvg(all)}
 <section class="keep"><h2>Detalle</h2>

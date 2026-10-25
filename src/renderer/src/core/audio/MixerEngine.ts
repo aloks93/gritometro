@@ -1,5 +1,5 @@
 import type { Bus, MixerConfig, Strip } from '../mixer/mixer'
-import { dbToGain, duckStep, MAX_NOTCHES, monitorFeed, stripOutputGain } from '../mixer/mixer'
+import { dbToGain, duckStep, MAX_NOTCHES, monitorFeed, sendGain, stripOutputGain } from '../mixer/mixer'
 import { compressorAutoMakeupDb } from '../studio/dsp'
 import { isVirtualDevice } from './AudioConfig'
 // no-inline: the CSP blocks data: URLs for worklet modules
@@ -109,6 +109,8 @@ interface BusNodes {
   audio: SinkAudio | null
   usesDestination: boolean
   recorder: { node: AudioWorkletNode; left: Float32Array[]; right: Float32Array[] } | null
+  /** Fed from the strips' pre-fader point */
+  pre: boolean
 }
 
 interface MonitorNodes {
@@ -129,7 +131,7 @@ export function structureKey(cfg: Pick<MixerConfig, 'strips' | 'buses' | 'sample
   return JSON.stringify({
     sr: cfg.sampleRate,
     strips: cfg.strips.map((s) => [s.id, s.input.deviceId, s.input.mode, s.input.left, s.input.right]),
-    buses: cfg.buses.map((b) => [b.id, b.kind]),
+    buses: cfg.buses.map((b) => [b.id, b.kind, !!b.pre]),
     monitor: !!cfg.monitor?.on
   })
 }
@@ -346,7 +348,9 @@ class MixerEngine {
     for (const [id, bus] of this.buses) {
       const send = ctx.createGain()
       send.gain.value = 0
-      nodes.pan.connect(send).connect(bus.sum)
+      // Aux (pre-fader) buses tap the strip before its fader, duck and pan
+      const from = bus.pre ? nodes.delay : nodes.pan
+      from.connect(send).connect(bus.sum)
       nodes.sends.set(id, send)
     }
     return nodes
@@ -394,7 +398,7 @@ class MixerEngine {
         void audio.play().catch(() => undefined)
       }
     }
-    return { sum, limiter, limiterTrim, stereo, mono, fader, meterL, meterR, scopeL, scopeR, stream, audio, usesDestination: firstOut && b.kind === 'out', recorder: null }
+    return { sum, limiter, limiterTrim, stereo, mono, fader, meterL, meterR, scopeL, scopeR, stream, audio, usesDestination: firstOut && b.kind === 'out', recorder: null, pre: !!b.pre }
   }
 
   /** Headphone output: built after the buses, before the strips (they connect their cue to it) */
@@ -490,7 +494,10 @@ class MixerEngine {
       set(n.delay.delayTime, Math.max(0, Math.min(500, s.delayMs)) / 1000)
       set(n.fader.gain, stripOutputGain(s, cfg.strips))
       set(n.pan.pan, s.pan)
-      for (const [busId, send] of n.sends) set(send.gain, s.sends.includes(busId) ? 1 : 0)
+      for (const [busId, send] of n.sends) {
+        const bus = cfg.buses.find((b) => b.id === busId)
+        set(send.gain, bus ? sendGain(s, bus) : 0)
+      }
       if (!s.duck.on && n.duckDb !== 0) {
         n.duckDb = 0
         set(n.duck.gain, 1)

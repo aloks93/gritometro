@@ -5,6 +5,7 @@ import { noiseFloorFrom } from '../../core/audio/Calibration'
 import { listInputs, type InputDevice } from '../../core/audio/MicrophoneService'
 import { newId, shuffle } from '../../core/players/players'
 import { BAND_CENTERS, curveDifference, encodeWav, matchGain, pcmRms, smoothCurve, summarizeTake, technicalScore } from '../../core/studio/analysis'
+import { curveDistance, rankForScenario, relativeSensitivity, SCENARIOS, winnersByScenario, type ScenarioId } from '../../core/studio/scenario'
 import { noteInfo } from '../../core/studio/pitch'
 import { buildReportHtml } from '../../core/studio/report'
 import { mergeCandidates, parseSession, serializeSession, type MicCandidate } from '../../core/studio/studio'
@@ -558,8 +559,89 @@ export function CompareView(): JSX.Element {
         </section>
       )}
 
+      {measured.length > 0 && <ScenarioPanel candidates={studio.candidates} referenceId={studio.referenceId} />}
+
       {measured.length > 0 && <ResponsePanel candidates={studio.candidates} referenceId={studio.referenceId} onReference={(id) => update('studio', (s) => ({ ...s, referenceId: id }))} />}
     </div>
+  )
+}
+
+/** Best mic per use, with a breakdown of what each one gains or loses for the chosen use */
+function ScenarioPanel({ candidates, referenceId }: { candidates: MicCandidate[]; referenceId: string | null }): JSX.Element {
+  const [scenario, setScenario] = useState<ScenarioId>('shout')
+  const winners = winnersByScenario(candidates)
+  const ranking = rankForScenario(candidates, scenario)
+  const ref = candidates.find((c) => c.id === referenceId && c.metrics)
+  const colorOf = (c: MicCandidate): string => COLORS[candidates.indexOf(c) % COLORS.length]
+  return (
+    <section className="st-panel">
+      <header className="st-panel-head">
+        <h2>Recomendación por uso</h2>
+        <span className="st-muted st-small">Las mismas medidas, ponderadas según para qué vas a usar el micrófono</span>
+      </header>
+      <div className="st-winners">
+        {winners.map((w) => (
+          <button key={w.scenario.id} className={`st-winner ${scenario === w.scenario.id ? 'on' : ''}`} onClick={() => setScenario(w.scenario.id)}>
+            <small>{w.scenario.name}</small>
+            <b>
+              <span className="st-swatch" style={{ background: colorOf(w.best) }} />
+              {w.best.name}
+            </b>
+            <i>
+              {w.score}/100{w.margin === null ? '' : w.margin === 0 ? ' · empate' : ` · +${w.margin}`}
+            </i>
+          </button>
+        ))}
+      </div>
+      <table className="st-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Micrófono</th>
+            <th>{SCENARIOS.find((s) => s.id === scenario)?.name}</th>
+            <th>Desglose</th>
+            <th title="Nivel de salida frente a la referencia con la misma fuente, descontando el trim">Sensibilidad</th>
+            <th title="Diferencia RMS de la curva de respuesta frente a la referencia">Distancia tonal</th>
+            <th>Observaciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ranking.map(({ c, score }, i) => {
+            const sens = ref && ref.id !== c.id ? relativeSensitivity(c, ref) : null
+            const dist = ref && ref.id !== c.id ? curveDistance(c.metrics!.curve, ref.metrics!.curve) : null
+            return (
+              <tr key={c.id} className={i === 0 ? 'best' : ''}>
+                <td>{i + 1}</td>
+                <td>
+                  <span className="st-swatch" style={{ background: colorOf(c) }} />
+                  {c.name}
+                </td>
+                <td>
+                  <b className="st-score">{score.total}</b>
+                </td>
+                <td>
+                  <div className="st-breakdown">
+                    {score.parts.map((p) => (
+                      <span key={p.key} title={`${p.label}: ${p.points}/${p.max}`} style={{ flex: p.max }}>
+                        <i style={{ width: `${(p.points / p.max) * 100}%` }} className={p.points / p.max < 0.5 ? 'bad' : p.points / p.max < 0.8 ? 'warn' : ''} />
+                      </span>
+                    ))}
+                  </div>
+                  <div className="st-muted st-small">{score.parts.map((p) => `${p.label} ${Math.round(p.points)}/${p.max}`).join(' · ')}</div>
+                </td>
+                <td>{ref ? (ref.id === c.id ? 'referencia' : `${sens! > 0 ? '+' : ''}${sens} dB`) : '—'}</td>
+                <td className={dist !== null && dist > 3 ? 'warn' : ''}>{ref ? (ref.id === c.id ? '0' : `${dist} dB`) : '—'}</td>
+                <td className="st-small st-notes-cell">{score.notes.join(' · ') || '—'}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <p className="st-muted st-small">
+        Cada uso reparte 100 puntos entre señal/ruido, ruido de fondo, nivel, margen, saturación, tono, graves, brillo y dinámica (p. ej. para gritos pesan sobre todo el margen y no
+        saturar; para podcast, el ruido). {ref ? `Sensibilidad y distancia tonal frente a «${ref.name}».` : 'Elige una referencia en la curva de respuesta para ver sensibilidad y distancia tonal.'}
+      </p>
+    </section>
   )
 }
 

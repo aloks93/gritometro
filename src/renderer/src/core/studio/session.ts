@@ -1,6 +1,7 @@
 import { technicalScore } from './analysis'
 import type { CalibrationRecord } from './calibration'
 import { escapeHtml } from './report'
+import { winnersByScenario } from './scenario'
 import type { MicCandidate } from './studio'
 
 // Measurement sessions: markers/timecode on takes, and a session file + report that ties
@@ -134,6 +135,9 @@ export function sessionConclusions(s: MeasurementSession): string[] {
     if (fav && fav.id !== best.id) out.push(`En la prueba a ciegas se prefirió ${fav.name}: decide entre lo técnico y lo que suena mejor al oído.`)
     const noisiest = [...measured].sort((a, b) => b.metrics!.noiseFloorDb - a.metrics!.noiseFloorDb)[0]
     if (measured.length > 1) out.push(`Peor ruido de fondo: ${noisiest.name} (${noisiest.metrics!.noiseFloorDb} dBFS).`)
+    // Only worth listing when the winner changes with the use
+    const perUse = winnersByScenario(measured)
+    if (measured.length > 1 && new Set(perUse.map((w) => w.best.id)).size > 1) out.push(`Por uso: ${perUse.map((w) => `${w.scenario.name} → ${w.best.name}`).join('; ')}.`)
   }
   const clipped = s.takes.filter((t) => t.clippedSamples > 0)
   if (clipped.length) out.push(`Tomas con saturación: ${clipped.map((t) => t.name).join(', ')}. Baja la ganancia y repítelas.`)

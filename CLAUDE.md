@@ -41,7 +41,8 @@ src/renderer/src/
                    calibration (calibrator check, IEC tolerance, history per profile, loopback, gain advice),
                    flac (lossless encoder), session (markers/timecode, clip markers, measurement session + report),
                    health (status lights ok/warning/silence/over/clip/off, level trackers, alarms, hot-plug),
-                   hardware (device probe, per-device profiles, auto profile switch, CSV helper)
+                   hardware (device probe, per-device profiles, auto profile switch, CSV helper),
+                   scenario (per-use mic scores: speech/singing/shout/podcast/instrument/room, sensitivity, tonal distance)
   themes/          Theme contract, registry, one folder per theme
   ui/              React: store (persisted app state), hooks, sound, components/, screens/
   ui/studio/       Studio shell (own scoped CSS, does not use party themes). Views (prefs.viewMode): Escenario
@@ -49,11 +50,12 @@ src/renderer/src/
                    health LEDs + panel + alarm banner in the topbar. Tabs: Monitor (meters, LUFS,
                    tuner, FFT/RTA/spectrogram/waterfall, scope, headphone monitoring), Sonómetro, Calibración, Grabadora (WAV/FLAC, markers,
                    measurement session JSON/PDF),
-                   Mezclador (virtual console: strips with HPF/notch/gate/EQ/comp/limiter/delay/ducking → A/B buses,
+                   Mezclador (virtual console: strips with HPF/notch/gate/EQ/comp/limiter/delay/ducking → A/B buses
+                   + optional pre-fader aux C buses (stage monitors),
                    pre/post-fader meters, CUE/PFL + headphone monitor, gain staging, anti-feedback, MIDI learn,
                    user presets, scenes,
                    stereo bus recording, auto trim; any bus can feed the analyzers),
-                   Comparador (takes, synced A/B, blind test, difference curves, session/PDF),
+                   Comparador (takes, synced A/B, blind test, difference curves, best mic per use, session/PDF),
                    Laboratorio (THD+N, phase/goniometer + mic alignment, room RT60), Equipos (device inventory,
                    capabilities, profiles per device, engine latency), Generador (signals +
                    latency), playback.ts / recordings (in-memory audio, never persisted)

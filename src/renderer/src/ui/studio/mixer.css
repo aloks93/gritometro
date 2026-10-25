@@ -642,3 +642,19 @@
 .st-notch .st-num i {
   display: none;
 }
+
+/* aux (C) buses: pre-fader monitor sends */
+.st-sends {
+  flex-wrap: wrap;
+}
+.st-sends button {
+  flex: 1 0 22%;
+}
+.st-sends button.on.aux {
+  background: var(--st-accent);
+  border-color: var(--st-accent);
+  color: #111;
+}
+.st-bus.out .st-strip-top .st-x {
+  margin-left: auto;
+}
