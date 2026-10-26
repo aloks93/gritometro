@@ -1,6 +1,6 @@
 {
   "name": "gritometro",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "description": "Gritómetro: mide quién grita más fuerte. Temas personalizables y modos de reto.",
   "main": "./out/main/index.js",
   "author": "Gritómetro",
@@ -17,6 +17,7 @@
     "build:studio:mac": "node scripts/build-studio.mjs --mac",
     "build:processor": "node scripts/build-processor.mjs",
     "build:processor:mac": "node scripts/build-processor.mjs --mac",
+    "plugin:presets": "node scripts/plugin-presets.mjs",
     "render:icon": "electron scripts/render-icon.cjs build/processor/icon.svg build/processor/icon.png 1024"
   },
   "devDependencies": {

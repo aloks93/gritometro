@@ -12,6 +12,8 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
 - `npm run build:studio` – standalone **Gritómetro Studio** (same code, `GRIT_EDITION=studio`) in `dist-studio/`
 - `npm run build:processor` – standalone **Gritómetro Procesador** (`GRIT_EDITION=processor`) in `dist-procesador/`
 - `npm run render:icon` – re-renders `build/processor/icon.svg` → `icon.png` (1024², via Electron)
+- `npm run plugin:presets` – regenerates `plugin/presets.json` and `plugin/tests/parity.json` from the app code (a vitest
+  test fails when they are stale): run it after touching processor presets or DSP
 - `npm run build:mac` / `npm run build:studio:mac` / `npm run build:processor:mac` – macOS dmg/zip (only on a Mac). Releases get them from
   `.github/workflows/macos.yml`, which builds on a Mac runner when a release is published and attaches the files
 
@@ -22,6 +24,14 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
   Canales → `InterfacesView`, Alt+1/2), no access code,
   no party mic (`useAudioBoot` disabled). Own appId/productName/icon (`electron-builder.processor.yml`, `build/processor/`),
   data folder `%APPDATA%/Gritometro Procesador`. Released as `procesador-vX.Y.Z` with `--latest=false`.
+- **Plugin VST3 / CLAP** (`plugin/`, Rust + nih-plug + egui, GPL-3.0): the processor inside a DAW. `plugin/src/dsp.rs` is a
+  line-by-line port of `core/processor/dynamics.ts`, `noise.ts` and the EQ biquads — **a DSP change in TS needs the same
+  change in Rust**; `cargo test` (`plugin/tests/parity.rs`) compares the Rust chain against the app's output
+  (`core/processor/pluginParity.ts`). Presets come from `presets.json` (all use × mic), preset files are the app's JSON.
+  `editor.rs` draws the app's processor look (knobs, meters, flow, EQ with spectrum). Built by
+  `.github/workflows/plugin.yml` (Windows + macOS universal) on `plugin-vX.Y.Z` releases. Locally on Windows: Rust gnu
+  toolchain linked with llvm-mingw (`cargo xtask bundle gritometro_procesador --release`; `--features standalone` = window
+  without a DAW).
 - Studio improvements go to every edition; keep party-only wording out of the studio (`AudioScreen studio` prop).
 - Studio language (ES/EN, `prefs.language`, auto = system): the studio is written in Spanish and `ui/studio/i18n.ts`
   translates what it renders (MutationObserver), plus confirm(), PDF reports and CSVs. **New studio texts need an

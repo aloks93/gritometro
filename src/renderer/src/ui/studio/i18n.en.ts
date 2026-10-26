@@ -1167,9 +1167,13 @@ export const EN: Record<string, string> = {
 
   // ---- processor: instruments
   'Procesador de instrumento': 'Instrument processor',
+  'Plugin VST3 / CLAP': 'VST3 / CLAP plugin',
+  'Este mismo procesador como plugin para tu DAW (Reaper, FL Studio, Ableton, Cubase, Studio One…). Abre los presets que exportes aquí.': 'This same processor as a plugin for your DAW (Reaper, FL Studio, Ableton, Cubase, Studio One…). It opens the presets you export here.',
   'Voz e instrumentos': 'Voice & instruments',
   'Puerta · EQ paramétrico · compresión · saturación de ampli · limitador · afinador': 'Gate · parametric EQ · compression · amp saturation · limiter · tuner',
   'Instrumentos': 'Instruments',
+  'Voces grabadas (limpieza y mezcla)': 'Recorded voices (clean-up and mix)',
+  'Grabaciones de voz para mezclar (teatro, video, doblaje, audiolibro): limpia el ruido de la sala, suaviza lo estridente y deja todas las voces al mismo nivel.': 'Voice recordings to mix (theatre, video, dubbing, audiobook): cleans the room noise, softens harshness and brings every voice to the same level.',
   'Bajo': 'Bass',
   'Guitarra': 'Guitar',
   'Batería y percusión': 'Drums and percussion',

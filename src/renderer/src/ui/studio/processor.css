@@ -1216,3 +1216,6 @@
   border-color: var(--vp-ok);
   color: var(--vp-ok);
 }
+.vp a.vp-btn {
+  text-decoration: none;
+}

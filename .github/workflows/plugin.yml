@@ -1,0 +1,69 @@
+# VST3 / CLAP plugin (plugin/): when a plugin-vX.Y.Z release is published, build it on Windows and
+# on a Mac (universal: Intel + Apple Silicon), run the DSP tests and attach the zips to the release.
+name: Plugin VST3 / CLAP
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach to (plugin-vX.Y.Z)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: ${{ startsWith(github.event.release.tag_name || inputs.tag, 'plugin-') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: plugin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'x86_64-apple-darwin,aarch64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: plugin
+
+      - name: Test (the DSP must match the app)
+        run: cargo test --release
+
+      - name: Bundle (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo xtask bundle gritometro_procesador --release
+          VERSION="${TAG#plugin-v}"
+          cp README.md LICENSE target/bundled/
+          cd target/bundled
+          7z a "../../Gritometro-Procesador-Plugin-$VERSION-windows.zip" "Gritometro Procesador.vst3" "Gritometro Procesador.clap" README.md LICENSE
+
+      - name: Bundle (macOS universal)
+        if: matrix.os == 'macos-latest'
+        run: |
+          cargo xtask bundle-universal gritometro_procesador --release
+          VERSION="${TAG#plugin-v}"
+          cd target/bundled
+          # No Apple certificate: ad-hoc signature so Apple Silicon loads it
+          codesign --force --deep -s - "Gritometro Procesador.vst3" "Gritometro Procesador.clap"
+          mkdir pkg && cp -R "Gritometro Procesador.vst3" "Gritometro Procesador.clap" ../../README.md ../../LICENSE pkg/
+          cd pkg && zip -qry "../../../Gritometro-Procesador-Plugin-$VERSION-mac.zip" .
+
+      - name: Attach to the release
+        run: gh release upload "$TAG" Gritometro-Procesador-Plugin-*.zip --clobber

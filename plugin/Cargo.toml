@@ -1,0 +1,36 @@
+[workspace]
+members = ["xtask"]
+resolver = "2"
+
+[package]
+name = "gritometro_procesador"
+version = "1.0.0"
+edition = "2021"
+authors = ["Gritómetro"]
+license = "GPL-3.0-or-later"
+description = "Gritómetro Procesador as a VST3 / CLAP plugin: noise reduction, gate, parametric EQ, de-esser, compressors, saturation and limiter"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git" }
+nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git" }
+atomic_float = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = { version = "0.14", default-features = false }
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+[features]
+# `cargo run --release --features standalone -- --backend dummy`: the plugin as its own window, to try it without a DAW
+standalone = ["nih_plug/standalone"]
+
+[[bin]]
+name = "gritometro_procesador_standalone"
+path = "src/main.rs"
+required-features = ["standalone"]

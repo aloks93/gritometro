@@ -17,6 +17,8 @@ permissions:
 
 jobs:
   mac:
+    # plugin-vX.Y.Z releases are built by plugin.yml
+    if: ${{ !startsWith(github.event.release.tag_name || inputs.tag, 'plugin-') }}
     runs-on: macos-latest
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}

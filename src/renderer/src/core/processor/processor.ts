@@ -357,6 +357,7 @@ export const USES: UsePreset[] = [
   { id: 'podcast', name: 'Podcast / locución', hint: 'Voz de radio: cuerpo, presencia y nivel muy estable.', source: 'voice', defaultMic: 'dynamic' },
   { id: 'singing', name: 'Voz cantada', hint: 'Compresión musical, aire arriba y sin cortar las colas.', source: 'voice', defaultMic: 'condenser' },
   { id: 'shout', name: 'Gritos / animación', hint: 'Aguanta gritos sin saturar: mucho margen y limitador firme.', source: 'voice', defaultMic: 'dynamic' },
+  { id: 'recorded', name: 'Voces grabadas (limpieza y mezcla)', hint: 'Grabaciones de voz para mezclar (teatro, video, doblaje, audiolibro): limpia el ruido de la sala, suaviza lo estridente y deja todas las voces al mismo nivel.', source: 'voice', defaultMic: 'condenser' },
   { id: 'clean', name: 'Limpio (solo protección)', hint: 'Solo paso alto y limitador: el sonido del micro tal cual.', source: 'voice', defaultMic: 'dynamic' },
   { id: 'bass-finger', name: 'Bajo eléctrico · dedos', hint: 'Graves firmes y notas parejas: compresión de bajista y sin barro en 250 Hz.', source: 'instrument', defaultMic: 'di' },
   { id: 'bass-pick', name: 'Bajo eléctrico · púa / rock', hint: 'Ataque de púa y medios que cortan en la mezcla, con un poco de saturación.', source: 'instrument', defaultMic: 'di' },
@@ -498,6 +499,22 @@ export function buildPreset(useId: string, micId: string): ProcessingChain {
       Object.assign(comp2, { on: true, thresholdDb: -22, ratio: 1.8, makeupDb: 1.5 })
       Object.assign(saturation, { on: true, mode: 'tape', driveDb: 4, mix: 20, toneHz: 14000 })
       Object.assign(deesser, { on: true, thresholdDb: -28, rangeDb: -6 })
+      break
+    case 'recorded':
+      // Recorded voices to mix: clean the room, tame harshness, and level different speakers
+      set(0, { freq: 100, slope: 24 })
+      set(1, { gainDb: -1, freq: 180 })
+      set(2, { gainDb: -2, freq: 350, q: 1.2 })
+      set(3, { gainDb: -1, freq: 900, q: 1.4 })
+      set(4, { gainDb: 1.5, freq: 3200, q: 1 })
+      set(5, { gainDb: -1.5, freq: 5000, q: 2 })
+      set(6, { gainDb: 1.5, freq: 11000 })
+      Object.assign(noise, { on: true, reductionDb: -15, smoothing: 60 })
+      Object.assign(gate, { on: true, mode: 'expander', thresholdDb: -50, ratio: 2, rangeDb: -20, holdMs: 150, releaseMs: 250 })
+      Object.assign(deesser, { on: true, freq: 7000, q: 1.2, thresholdDb: -30, rangeDb: -8 })
+      // Peak control plus a leveler: quiet and loud speakers end up close together
+      Object.assign(comp1, { on: true, thresholdDb: -20, ratio: 3, attackMs: 5, releaseMs: 100, makeupDb: 4, scHpfHz: 150 })
+      Object.assign(comp2, { on: true, thresholdDb: -24, ratio: 2.5, attackMs: 40, releaseMs: 500, makeupDb: 2 })
       break
     case 'shout':
       set(0, { freq: 120 })

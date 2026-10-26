@@ -186,6 +186,16 @@ export function ProcessorView({ onOpenChannels }: { onOpenChannels?: () => void 
             </span>
           )}
         </div>
+        <a
+          className="vp-btn ghost"
+          href="https://github.com/aloks93/gritometro/releases?q=plugin&expanded=true"
+          target="_blank"
+          rel="noreferrer"
+          title="Este mismo procesador como plugin para tu DAW (Reaper, FL Studio, Ableton, Cubase, Studio One…). Abre los presets que exportes aquí."
+        >
+          <Icon name="download" size={15} />
+          Plugin VST3 / CLAP
+        </a>
         {onOpenChannels && (
           <button className="vp-btn" onClick={onOpenChannels} title="Todas las entradas y canales a la vez">
             <Icon name="mic" size={15} />
