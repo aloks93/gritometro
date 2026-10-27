@@ -52,7 +52,7 @@ jobs:
           VERSION="${TAG#plugin-v}"
           cp README.md LICENSE target/bundled/
           cd target/bundled
-          7z a "../../Gritometro-Procesador-Plugin-$VERSION-windows.zip" "Gritometro Procesador.vst3" "Gritometro Procesador.clap" README.md LICENSE
+          7z a "../../Gritometro-Plugin-$VERSION-windows.zip" "Gritometro Plugin.vst3" "Gritometro Plugin.clap" README.md LICENSE
 
       - name: Bundle (macOS universal)
         if: matrix.os == 'macos-latest'
@@ -61,9 +61,9 @@ jobs:
           VERSION="${TAG#plugin-v}"
           cd target/bundled
           # No Apple certificate: ad-hoc signature so Apple Silicon loads it
-          codesign --force --deep -s - "Gritometro Procesador.vst3" "Gritometro Procesador.clap"
-          mkdir pkg && cp -R "Gritometro Procesador.vst3" "Gritometro Procesador.clap" ../../README.md ../../LICENSE pkg/
-          cd pkg && zip -qry "../../../Gritometro-Procesador-Plugin-$VERSION-mac.zip" .
+          codesign --force --deep -s - "Gritometro Plugin.vst3" "Gritometro Plugin.clap"
+          mkdir pkg && cp -R "Gritometro Plugin.vst3" "Gritometro Plugin.clap" ../../README.md ../../LICENSE pkg/
+          cd pkg && zip -qry "../../../Gritometro-Plugin-$VERSION-mac.zip" .
 
       - name: Attach to the release
-        run: gh release upload "$TAG" Gritometro-Procesador-Plugin-*.zip --clobber
+        run: gh release upload "$TAG" Gritometro-Plugin-*.zip --clobber

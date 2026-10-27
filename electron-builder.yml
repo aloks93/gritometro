@@ -1,5 +1,5 @@
 appId: com.gritometro.app
-productName: Gritometro
+productName: Gritometro Juego
 directories:
   buildResources: build
   output: dist
@@ -13,7 +13,7 @@ win:
       arch: [x64]
     - target: portable
       arch: [x64]
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: Gritometro-Juego-${version}-${arch}.${ext}
 mac:
   icon: build/icon.png
   category: public.app-category.music
@@ -22,7 +22,7 @@ mac:
       arch: [x64, arm64]
     - target: zip
       arch: [x64, arm64]
-  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+  artifactName: Gritometro-Juego-${version}-mac-${arch}.${ext}
   # No Apple certificate: ad-hoc signature, first launch with right-click → Open
   identity: '-'
   hardenedRuntime: false
@@ -32,6 +32,6 @@ mac:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  shortcutName: Gritometro
+  shortcutName: Gritometro Juego
 portable:
-  artifactName: ${productName}-${version}-portable.${ext}
+  artifactName: Gritometro-Juego-${version}-portable.${ext}

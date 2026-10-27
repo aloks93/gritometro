@@ -7,13 +7,13 @@ import { dataPath, readKey, writeKey } from './storage'
 let mainWindow: BrowserWindow | null = null
 const STUDIO = __EDITION__ === 'studio'
 const PROCESSOR = __EDITION__ === 'processor'
-const APP_NAME = STUDIO ? 'Gritometro Studio' : PROCESSOR ? 'Gritometro Procesador' : null
+const APP_NAME = STUDIO ? 'Gritometro Studio' : PROCESSOR ? 'Gritometro Procesador de Audio' : 'Gritometro Juego'
+// Data folders keep their original names (the products were renamed later), so nobody loses their
+// records or presets. The standalone editions never touch the party app's folder.
+const DATA_DIR = STUDIO ? 'Gritometro Studio' : PROCESSOR ? 'Gritometro Procesador' : 'gritometro'
 
-// The standalone editions keep their own data folder so they never touch the party app's records
-if (APP_NAME) {
-  app.setName(APP_NAME)
-  app.setPath('userData', join(app.getPath('appData'), APP_NAME))
-}
+app.setName(APP_NAME)
+app.setPath('userData', join(app.getPath('appData'), DATA_DIR))
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -22,7 +22,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: STUDIO || PROCESSOR ? '#0b0d10' : '#0b1f3a',
-    title: STUDIO ? 'Gritómetro Studio' : PROCESSOR ? 'Gritómetro Procesador' : 'Gritómetro',
+    title: STUDIO ? 'Gritómetro Studio' : PROCESSOR ? 'Gritómetro Procesador de Audio' : 'Gritómetro Juego',
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

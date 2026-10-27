@@ -1,4 +1,4 @@
-// Builds the standalone "Gritómetro Procesador" in dist-procesador/: Windows installer + portable by
+// Builds the standalone "Gritómetro Procesador de Audio" in dist-procesador/: Windows installer + portable by
 // default, or the macOS dmg/zip with --mac. Same code as the party app, compiled with GRIT_EDITION=processor.
 import { execSync } from 'node:child_process'
 

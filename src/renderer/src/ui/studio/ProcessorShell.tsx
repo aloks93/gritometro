@@ -12,7 +12,7 @@ import { ProcessorView } from './ProcessorView'
 import { Segmented } from './widgets'
 import './studio.css'
 
-// Standalone "Gritómetro Procesador" edition: only the mic processor (and its channel view for
+// Standalone "Gritómetro Procesador de Audio" edition: only the mic processor (and its channel view for
 // multichannel interfaces), with its own window chrome.
 
 type Page = 'processor' | 'channels'
@@ -25,7 +25,7 @@ export function ProcessorShell(): JSX.Element {
 
   // Out here, so a language change (which remounts the body) doesn't stop the audio
   useEffect(() => {
-    document.title = 'Gritómetro Procesador'
+    document.title = 'Gritómetro Procesador de Audio'
     return () => {
       processorEngine.stop()
       multiProcessor.stopAll()

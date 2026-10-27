@@ -8,9 +8,9 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
 - `npm run dev` – app with hot reload
 - `npm test` – Vitest (pure logic only: scoring, modes, studio DSP)
 - `npm run typecheck` – `tsc --noEmit`
-- `npm run build:win` – production build + Windows installer and portable `.exe` in `dist/`
+- `npm run build:win` – **Gritómetro Juego** (party edition): production build + Windows installer and portable `.exe` in `dist/`
 - `npm run build:studio` – standalone **Gritómetro Studio** (same code, `GRIT_EDITION=studio`) in `dist-studio/`
-- `npm run build:processor` – standalone **Gritómetro Procesador** (`GRIT_EDITION=processor`) in `dist-procesador/`
+- `npm run build:processor` – standalone **Gritómetro Procesador de Audio** (`GRIT_EDITION=processor`) in `dist-procesador/`
 - `npm run render:icon` – re-renders `build/processor/icon.svg` → `icon.png` (1024², via Electron)
 - `npm run plugin:presets` – regenerates `plugin/presets.json` and `plugin/tests/parity.json` from the app code (a vitest
   test fails when they are stale): run it after touching processor presets or DSP
@@ -18,13 +18,16 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
   `.github/workflows/macos.yml`, which builds on a Mac runner when a release is published and attaches the files
 
 ## Editions
-- **Party** (default): the birthday app, with the hidden studio inside. Released as `vX.Y.Z` (marked Latest).
+- **Gritómetro Juego** (party, default): the birthday app, with the hidden studio inside. Released as `vX.Y.Z` (marked Latest).
+- Product names: Gritómetro Juego / Gritómetro Procesador de Audio / Gritómetro Plugin (+ Gritómetro Studio). Data folders
+  keep their original names (`gritometro`, `Gritometro Procesador`, pinned in `src/main/index.ts`); never rename them.
+- Releases: keep only the latest release of each product on GitHub (delete the previous one with `--cleanup-tag` after publishing).
 - **Studio**: `__EDITION__ === 'studio'` (define injected by `electron.vite.config.ts`). Opens straight into `StudioShell standalone` (no exit to party, no Ctrl+Shift+S), behind an access code (`core/studio/unlock.ts`, only the SHA-256 is stored; remembered via `settings.studioUnlocked`). Own appId/productName (`electron-builder.studio.yml`) and own data folder `%APPDATA%/Gritometro Studio`. Released separately as `studio-vX.Y.Z` with `--latest=false`.
-- **Procesador**: `__EDITION__ === 'processor'`. Only the mic processor (`ProcessorShell`: tabs Procesador → `ProcessorView` and
+- **Gritómetro Procesador de Audio**: `__EDITION__ === 'processor'`. Only the mic processor (`ProcessorShell`: tabs Procesador → `ProcessorView` and
   Canales → `InterfacesView`, Alt+1/2), no access code,
   no party mic (`useAudioBoot` disabled). Own appId/productName/icon (`electron-builder.processor.yml`, `build/processor/`),
   data folder `%APPDATA%/Gritometro Procesador`. Released as `procesador-vX.Y.Z` with `--latest=false`.
-- **Plugin VST3 / CLAP** (`plugin/`, Rust + nih-plug + egui, GPL-3.0): the processor inside a DAW. `plugin/src/dsp.rs` is a
+- **Gritómetro Plugin** (VST3 / CLAP, `plugin/`, Rust + nih-plug + egui, GPL-3.0): the processor inside a DAW. `plugin/src/dsp.rs` is a
   line-by-line port of `core/processor/dynamics.ts`, `noise.ts` and the EQ biquads — **a DSP change in TS needs the same
   change in Rust**; `cargo test` (`plugin/tests/parity.rs`) compares the Rust chain against the app's output
   (`core/processor/pluginParity.ts`). Presets come from `presets.json` (all use × mic), preset files are the app's JSON.

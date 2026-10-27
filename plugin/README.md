@@ -1,6 +1,6 @@
-# Gritómetro Procesador (plugin VST3 / CLAP)
+# Gritómetro Plugin (VST3 / CLAP)
 
-El mismo procesador de la app Gritómetro Procesador, como plugin para tu DAW (Reaper, FL Studio,
+El mismo procesador de la app Gritómetro Procesador de Audio, como plugin para tu DAW (Reaper, FL Studio,
 Ableton Live, Cubase, Studio One, Bitwig, Audacity…): reducción de ruido, puerta/expansor, EQ
 paramétrico de 8 bandas, de-esser, dos compresores, saturador y limitador look-ahead, con los mismos
 presets (voz, voces grabadas, bajo, guitarra, batería…) y la misma interfaz.
@@ -9,17 +9,17 @@ presets (voz, voces grabadas, bajo, guitarra, batería…) y la misma interfaz.
 
 **Windows**
 1. Descomprime el `.zip`.
-2. Copia la carpeta `Gritometro Procesador.vst3` en `C:\Program Files\Common Files\VST3\`.
-3. (Opcional, para DAWs con CLAP como Reaper o Bitwig) copia `Gritometro Procesador.clap` en
+2. Copia la carpeta `Gritometro Plugin.vst3` en `C:\Program Files\Common Files\VST3\`.
+3. (Opcional, para DAWs con CLAP como Reaper o Bitwig) copia `Gritometro Plugin.clap` en
    `C:\Program Files\Common Files\CLAP\`.
-4. En tu DAW, vuelve a escanear los plugins y búscalo como **Gritometro Procesador**.
+4. En tu DAW, vuelve a escanear los plugins y búscalo como **Gritometro Plugin**.
 
 **macOS**
 1. Descomprime el `.zip`.
-2. Copia `Gritometro Procesador.vst3` en `~/Library/Audio/Plug-Ins/VST3/` y
-   `Gritometro Procesador.clap` en `~/Library/Audio/Plug-Ins/CLAP/`.
+2. Copia `Gritometro Plugin.vst3` en `~/Library/Audio/Plug-Ins/VST3/` y
+   `Gritometro Plugin.clap` en `~/Library/Audio/Plug-Ins/CLAP/`.
 3. No está firmado por Apple: si el DAW no lo carga, en Terminal:
-   `xattr -cr ~/Library/Audio/Plug-Ins/VST3/"Gritometro Procesador.vst3"` (y lo mismo con el `.clap`).
+   `xattr -cr ~/Library/Audio/Plug-Ins/VST3/"Gritometro Plugin.vst3"` (y lo mismo con el `.clap`).
 
 ## Uso
 

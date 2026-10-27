@@ -1,6 +1,6 @@
 # macOS builds can't be made on Windows: when a release is published, build that edition on a
-# Mac runner and attach the dmg/zip files to it. vX.Y.Z = party app, studio-vX.Y.Z = Gritómetro Studio,
-# procesador-vX.Y.Z = Gritómetro Procesador.
+# Mac runner and attach the dmg/zip files to it. vX.Y.Z = Gritómetro Juego, studio-vX.Y.Z = Gritómetro Studio,
+# procesador-vX.Y.Z = Gritómetro Procesador de Audio.
 name: macOS release builds
 
 on:

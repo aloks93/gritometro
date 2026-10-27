@@ -1,4 +1,4 @@
-// Gritómetro Procesador as a VST3 / CLAP plugin: the app's processing chain (noise reduction,
+// Gritómetro Plugin: Gritómetro Procesador de Audio as a VST3 / CLAP plugin: the app's processing chain (noise reduction,
 // gate, parametric EQ, de-esser, two compressors, saturation, look-ahead limiter) inside a DAW,
 // with the app's presets and preset files.
 
@@ -131,7 +131,7 @@ impl GritProcesador {
 }
 
 impl Plugin for GritProcesador {
-    const NAME: &'static str = "Gritometro Procesador";
+    const NAME: &'static str = "Gritometro Plugin";
     const VENDOR: &'static str = "Gritometro";
     const URL: &'static str = "https://github.com/aloks93/gritometro";
     const EMAIL: &'static str = "";
