@@ -1,8 +1,12 @@
 // Plugin window, drawn like the app's processor panel (src/renderer/src/ui/studio/ProcessorView.tsx
 // + processor.css): rack header with presets, vertical meters, signal flow with live reduction,
-// big parametric EQ with live spectrum and draggable bands, band strip and module cards with knobs.
+// big parametric EQ with live spectrum and draggable bands, and below it the stage picked in the
+// signal flow (EQ bands, or one module with its transfer curve, knobs and GR meter). Everything fits
+// the window without scrolling.
 
-use crate::dsp::{band_stages, fft, limiter_latency, response_db, Coefs, NOISE_FFT, SAT_LATENCY};
+use crate::dsp::{
+    auto_makeup_db, band_stages, compressor_curve, db_to_lin, fft, limiter_latency, response_db, saturate, Coefs, CompSettings, GateMode, NOISE_FFT, SAT_LATENCY,
+};
 use crate::params::*;
 use crate::presets::{apply_chain, bundle, chain_of, parse_preset_file, serialize_preset_file, ChainJson};
 use crate::{Shared, LEARN_SECONDS, SCOPE_SIZE};
@@ -66,6 +70,8 @@ struct GuiState {
     out_hold: (f32, u32),
     sel_band: usize,
     drag_band: Option<usize>,
+    /// Stage shown in the lower panel
+    stage: Stage,
     spec_in: Vec<f32>,
     spec_out: Vec<f32>,
     spec_peak: Vec<f32>,
@@ -85,6 +91,7 @@ pub fn create(params: Arc<ProcParams>, shared: Arc<Shared>) -> Option<Box<dyn Ed
         out_hold: (-100.0, 0),
         sel_band: 0,
         drag_band: None,
+        stage: Stage::Eq,
         spec_in: vec![-140.0; SPEC_COLS + 1],
         spec_out: vec![-140.0; SPEC_COLS + 1],
         spec_peak: vec![-140.0; SPEC_COLS + 1],
@@ -133,9 +140,7 @@ pub fn create(params: Arc<ProcParams>, shared: Arc<Shared>) -> Option<Box<dyn Ed
                     ui.add_space(8.0);
                     main_row(ui, setter, &params, &shared, st);
                     ui.add_space(8.0);
-                    bands_strip(ui, setter, &params, st);
-                    ui.add_space(8.0);
-                    modules(ui, setter, &params, &shared, st);
+                    stage_panel(ui, setter, &params, &shared, st);
                 });
             });
         },
@@ -310,23 +315,14 @@ fn segmented<T: Enum + PartialEq + 'static>(ui: &mut egui::Ui, setter: &ParamSet
 fn combo<T: Enum + PartialEq + Copy + 'static>(ui: &mut egui::Ui, id: &str, setter: &ParamSetter, p: &EnumParam<T>, width: f32) {
     let idx = p.value().to_index();
     let names = T::variants();
-    egui::ComboBox::from_id_salt(id).selected_text(egui::RichText::new(names[idx]).size(11.5)).width(width).show_ui(ui, |ui| {
+    // Truncated so a long name never widens its card
+    egui::ComboBox::from_id_salt(id).selected_text(egui::RichText::new(names[idx]).size(11.5)).width(width).truncate().show_ui(ui, |ui| {
         for (i, name) in names.iter().enumerate() {
             if ui.selectable_label(i == idx, *name).clicked() {
                 set_e(setter, p, T::from_index(i));
             }
         }
     });
-}
-
-fn gr_badge(ui: &mut egui::Ui, v: f32) {
-    let active = v < -0.5;
-    egui::Frame::NONE
-        .fill(if active { WARN.gamma_multiply(0.12) } else { PANEL2 })
-        .stroke(Stroke::new(1.0_f32, if active { WARN.gamma_multiply(0.5) } else { LINE2 }))
-        .corner_radius(3.0)
-        .inner_margin(egui::Margin::symmetric(6, 2))
-        .show(ui, |ui| ui.label(mono(format!("GR {:.1} dB", v.min(0.0)), if active { WARN } else { DIM })));
 }
 
 // ---- Header and presets
@@ -548,7 +544,7 @@ fn update_spectrum(sh: &Shared, st: &mut GuiState) {
 }
 
 fn vmeter(ui: &mut egui::Ui, db: f32, hold: f32, label: &str) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(64.0, 250.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(64.0, 214.0), Sense::hover());
     let p = ui.painter_at(rect);
     let bar = Rect::from_min_max(Pos2::new(rect.right() - 26.0, rect.top() + 14.0), Pos2::new(rect.right() - 8.0, rect.bottom() - 16.0));
     let y_of = |d: f32| bar.bottom() - ((d + 60.0) / 60.0).clamp(0.0, 1.0) * bar.height();
@@ -595,8 +591,8 @@ fn main_row(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, sh: &Shared
             knob(ui, setter, &p.input_gain, "Ganancia", ACCENT, 40.0, true);
             switch(ui, setter, &p.phase_invert, ACCENT, ["Ø", "Ø"]);
         });
-        // Two side columns of 84 px + frame (22 px) each, plus the spacing between the three
-        let center_w = ui.available_width() - 2.0 * (84.0 + 22.0) - 2.0 * ui.spacing().item_spacing.x;
+        // The input column is already placed: leave room for the output one (84 px + frame) and the gaps
+        let center_w = ui.available_width() - (84.0 + 22.0) - 2.0 * ui.spacing().item_spacing.x;
         ui.vertical(|ui| {
             ui.set_width(center_w);
             signal_flow(ui, setter, p, st);
@@ -646,21 +642,35 @@ fn legend(ui: &mut egui::Ui, label: &str, color: Color32) {
     ui.painter().rect_filled(r, 1.0, color);
 }
 
-// ---- Signal flow: one block per stage with its LED and live reduction
+// ---- Signal flow: one block per stage; click shows its controls below, the LED switches it
 
-fn signal_flow(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, st: &GuiState) {
-    let s = &st.shown;
+/// The stage whose controls the lower panel shows
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Stage {
+    Noise,
+    Gate,
+    Eq,
+    DeEss,
+    Comp1,
+    Comp2,
+    Sat,
+    Lim,
+}
+
+fn signal_flow(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, st: &mut GuiState) {
+    let s = st.shown;
     let db = |v: f32| format!("{:.1} dB", v.min(0.0));
     let gate_title = if p.gate.mode.value() == GateModeP::Gate { "Puerta" } else { "Expansor" };
     let eq_n = p.bands.iter().filter(|b| b.on.value()).count();
-    let mut blocks: Vec<(&str, &BoolParam, Color32, String, f32)> = vec![("Ruido", &p.noise.on, C_NOISE, db(s[2]), s[2]), (gate_title, &p.gate.on, C_GATE, db(s[3]), s[3])];
-    let eq = ("EQ", &p.eq_on, C_EQ, format!("{eq_n} bandas"), 0.0);
+    let mut blocks: Vec<(Stage, &str, &BoolParam, Color32, String, f32)> =
+        vec![(Stage::Noise, "Ruido", &p.noise.on, C_NOISE, db(s[2]), s[2]), (Stage::Gate, gate_title, &p.gate.on, C_GATE, db(s[3]), s[3])];
+    let eq = (Stage::Eq, "EQ", &p.eq_on, C_EQ, format!("{eq_n} bandas"), 0.0);
     let sat_value = if p.saturation.on.value() { format!("{:.1} dB", p.saturation.drive.value()) } else { "—".into() };
     let dynamics = [
-        ("De-esser", &p.deesser.on, C_DEESS, db(s[4]), s[4]),
-        ("Comp 1", &p.comp1.on, C_COMP1, db(s[5]), s[5]),
-        ("Comp 2", &p.comp2.on, C_COMP2, db(s[6]), s[6]),
-        ("Saturador", &p.saturation.on, C_SAT, sat_value, 0.0),
+        (Stage::DeEss, "De-esser", &p.deesser.on, C_DEESS, db(s[4]), s[4]),
+        (Stage::Comp1, "Comp 1", &p.comp1.on, C_COMP1, db(s[5]), s[5]),
+        (Stage::Comp2, "Comp 2", &p.comp2.on, C_COMP2, db(s[6]), s[6]),
+        (Stage::Sat, "Saturador", &p.saturation.on, C_SAT, sat_value, 0.0),
     ];
     if p.eq_post.value() {
         blocks.extend(dynamics);
@@ -669,36 +679,47 @@ fn signal_flow(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, st: &Gui
         blocks.push(eq);
         blocks.extend(dynamics);
     }
-    blocks.push(("Limitador", &p.limiter.on, C_LIM, db(s[7]), s[7]));
+    blocks.push((Stage::Lim, "Limitador", &p.limiter.on, C_LIM, db(s[7]), s[7]));
     panel(ui, None, |ui| {
         let gap = 6.0;
         let w = (ui.available_width() - gap * (blocks.len() as f32 - 1.0)) / blocks.len() as f32;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
-            for (title, on_p, color, value, gr) in blocks {
+            for (stage, title, on_p, color, value, gr) in blocks {
                 let on = on_p.value();
+                let sel = st.stage == stage;
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 54.0), Sense::click());
+                let led_hit = Rect::from_center_size(Pos2::new(rect.left() + 12.0, rect.top() + 15.0), Vec2::splat(22.0));
+                let over_led = resp.hover_pos().is_some_and(|q| led_hit.contains(q));
                 let pt = ui.painter();
-                pt.rect_filled(rect, 4.0, if on { PANEL2 } else { OFF });
-                pt.rect_stroke(rect, 4.0, Stroke::new(1.0_f32, if on { color.gamma_multiply(0.45) } else { LINE }), StrokeKind::Inside);
+                pt.rect_filled(rect, 4.0, if sel { color.gamma_multiply(0.10) } else if on { PANEL2 } else { OFF });
+                let border = if sel { Stroke::new(1.5_f32, color) } else { Stroke::new(1.0_f32, if on { color.gamma_multiply(0.45) } else { LINE }) };
+                pt.rect_stroke(rect, 4.0, border, StrokeKind::Inside);
                 pt.rect_filled(Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0)), CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 }, if on { color } else { LINE2 });
-                let led_c = Pos2::new(rect.left() + 12.0, rect.top() + 15.0);
+                let led_c = led_hit.center();
+                if over_led {
+                    pt.circle_stroke(led_c, 8.0, Stroke::new(1.0_f32, color.gamma_multiply(0.7)));
+                }
                 if on {
                     pt.circle_filled(led_c, 6.5, color.gamma_multiply(0.25));
                 }
                 pt.circle_filled(led_c, 3.5, if on { color } else { LED_OFF });
-                pt.text(Pos2::new(rect.left() + 22.0, rect.top() + 15.0), Align2::LEFT_CENTER, title, FontId::proportional(12.0), if on { TEXT } else { DIM });
+                pt.text(Pos2::new(rect.left() + 22.0, rect.top() + 15.0), Align2::LEFT_CENTER, title, FontId::proportional(12.0), if on || sel { TEXT } else { DIM });
                 let bar = Rect::from_min_size(Pos2::new(rect.left() + 8.0, rect.top() + 28.0), Vec2::new(rect.width() - 16.0, 3.0));
                 pt.rect_filled(bar, 1.0, DARK);
                 let t = (-gr / 24.0).clamp(0.0, 1.0);
                 if t > 0.0 {
                     pt.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * t, bar.height())), 1.0, color);
                 }
-                pt.text(Pos2::new(rect.left() + 8.0, rect.bottom() - 11.0), Align2::LEFT_CENTER, value, FontId::monospace(10.5), DIM);
+                pt.text(Pos2::new(rect.left() + 8.0, rect.bottom() - 11.0), Align2::LEFT_CENTER, value, FontId::monospace(10.5), if on { TEXT } else { DIM });
                 if resp.clicked() {
-                    set_b(setter, on_p, !on);
+                    if over_led {
+                        set_b(setter, on_p, !on);
+                    } else {
+                        st.stage = stage;
+                    }
                 }
-                resp.on_hover_text("Clic = activar / desactivar");
+                resp.on_hover_text(if over_led { "Activar / desactivar" } else { "Clic = ver sus controles abajo · LED = activar / desactivar" });
             }
         });
     });
@@ -707,7 +728,7 @@ fn signal_flow(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, st: &Gui
 // ---- Parametric EQ graph
 
 fn eq_graph(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, sr: f32, st: &mut GuiState) {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 270.0), Sense::click_and_drag());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 236.0), Sense::click_and_drag());
     let pt = ui.painter_at(rect);
     pt.rect_filled(rect, 4.0, Color32::from_rgb(9, 11, 14));
     let x_of = |f: f32| rect.left() + (f.max(20.0) / 20.0).log10() / 3.0 * rect.width();
@@ -825,109 +846,215 @@ fn eq_graph(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, sr: f32, st
     pt.rect_stroke(rect, 4.0, Stroke::new(1.0_f32, LINE), StrokeKind::Inside);
 }
 
-// ---- Band strip
+// ---- Band strip: every card has the same slots, so they all line up
+
+/// Size of a knob drawn at `size` (see knob()), for empty slots of the same footprint
+fn knob_slot(size: f32) -> Vec2 {
+    Vec2::new((size + 26.0).max(56.0), size + 38.0)
+}
 
 fn bands_strip(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, st: &mut GuiState) {
     let eq_on = p.eq_on.value();
-    panel(ui, None, |ui| {
-        ui.columns(8, |cols| {
-            for ((i, b), ui) in p.bands.iter().enumerate().zip(cols.iter_mut()) {
-                let w = ui.available_width();
-                let col = BAND_COLORS[i];
-                let sel = i == st.sel_band;
-                let kind = b.kind.value().dsp();
-                let resp = egui::Frame::NONE
-                    .fill(if sel { PANEL2 } else { OFF })
-                    .stroke(Stroke::new(1.0_f32, if sel { col.gamma_multiply(0.7) } else { LINE }))
-                    .corner_radius(4.0)
-                    .inner_margin(6.0)
-                    .show(ui, |ui| {
-                        ui.set_width(w - 14.0);
-                        if !(eq_on && b.on.value()) {
-                            ui.multiply_opacity(0.55);
-                        }
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 4.0;
-                            led(ui, setter, &b.on, col);
-                            ui.label(egui::RichText::new(format!("{}", i + 1)).strong().color(col));
-                            combo(ui, &format!("b{i}t"), setter, &b.kind, (w - 70.0).max(56.0));
-                        });
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 0.0;
-                            knob(ui, setter, &b.freq, "Frec.", col, 32.0, false);
-                            if kind.has_gain() {
-                                knob(ui, setter, &b.gain, "Gan.", col, 32.0, true);
+    let ks = 28.0;
+    panel(ui, Some(C_EQ), |ui| {
+        let full = ui.available_width();
+        ui.set_width(full);
+        ui.set_max_width(full);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("BANDAS DEL ECUALIZADOR").size(11.5).strong().color(TEXT));
+            ui.label(small("Clic en una tarjeta = seleccionarla en el gráfico · LED = activar / desactivar"));
+        });
+        ui.add_space(4.0);
+        let w = ((full - 7.0 * 8.0) / 8.0).floor();
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            for (i, b) in p.bands.iter().enumerate() {
+                ui.allocate_ui_with_layout(Vec2::new(w, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.set_max_width(w);
+                    let col = BAND_COLORS[i];
+                    let sel = i == st.sel_band;
+                    let kind = b.kind.value().dsp();
+                    let resp = egui::Frame::NONE
+                        .fill(if sel { PANEL2 } else { OFF })
+                        .stroke(Stroke::new(if sel { 1.5_f32 } else { 1.0_f32 }, if sel { col } else { LINE }))
+                        .corner_radius(4.0)
+                        .inner_margin(6.0)
+                        .show(ui, |ui| {
+                            ui.set_width(w - 14.0);
+                            if !(eq_on && b.on.value()) {
+                                ui.multiply_opacity(0.5);
                             }
-                        });
-                        if kind.has_q() {
-                            knob(ui, setter, &b.q, if kind.has_slope() { "Res." } else { "Q" }, col, 32.0, false);
-                        }
-                        if kind.has_slope() {
-                            combo(ui, &format!("b{i}s"), setter, &b.slope, (w - 40.0).max(56.0));
-                        }
-                    })
-                    .response;
-                if resp.interact(Sense::click()).clicked() {
-                    st.sel_band = i;
-                }
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                led(ui, setter, &b.on, col);
+                                ui.label(egui::RichText::new(format!("{}", i + 1)).strong().color(col));
+                                combo(ui, &format!("b{i}t"), setter, &b.kind, (w - 92.0).max(48.0));
+                            });
+                            // Two rows of the same height on every card: Frec. + Gan./Res./Q, then Q or the slope
+                            let slot = knob_slot(ks);
+                            let row = Vec2::new(ui.available_width(), slot.y);
+                            ui.allocate_ui_with_layout(row, egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                                ui.set_min_size(row);
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                knob(ui, setter, &b.freq, "Frec.", col, ks, false);
+                                if kind.has_gain() {
+                                    knob(ui, setter, &b.gain, "Gan.", col, ks, true);
+                                } else if kind.has_q() {
+                                    knob(ui, setter, &b.q, if kind.has_slope() { "Res." } else { "Q" }, col, ks, false);
+                                }
+                            });
+                            ui.allocate_ui_with_layout(row, egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                                ui.set_min_size(row);
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                if kind.has_gain() && kind.has_q() {
+                                    knob(ui, setter, &b.q, "Q", col, ks, false);
+                                } else if kind.has_slope() {
+                                    ui.vertical(|ui| {
+                                        ui.add_space(2.0);
+                                        ui.label(egui::RichText::new("PENDIENTE").size(9.5).color(DIM));
+                                        ui.add_space(4.0);
+                                        combo(ui, &format!("b{i}s"), setter, &b.slope, (row.x - 34.0).max(56.0));
+                                    });
+                                }
+                            });
+                        })
+                        .response;
+                    if resp.interact(Sense::click()).clicked() {
+                        st.sel_band = i;
+                    }
+                });
             }
         });
     });
 }
 
-// ---- Module cards
+// ---- Module panel: the stage selected in the signal flow, full width
 
-fn module_card(ui: &mut egui::Ui, width: f32, title: &str, color: Color32, setter: &ParamSetter, on: &BoolParam, gr: Option<f32>, actions: impl FnOnce(&mut egui::Ui), knobs: impl FnOnce(&mut egui::Ui)) {
+/// Static transfer curve of a stage, input → output (dB, or linear for the saturator), like the app's TransferGraph
+fn transfer_graph(ui: &mut egui::Ui, curve: &dyn Fn(f32) -> f32, range: (f32, f32), thr: Option<f32>, color: Color32, active: bool) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(150.0, 130.0), Sense::hover());
+    let pt = ui.painter_at(rect);
+    pt.rect_filled(rect, 3.0, Color32::from_rgb(9, 11, 14));
+    let (lo, hi) = range;
+    let x_of = |v: f32| rect.left() + (v - lo) / (hi - lo) * rect.width();
+    let y_of = |v: f32| rect.bottom() - ((v - lo) / (hi - lo)).clamp(-0.02, 1.02) * rect.height();
+    let grid = Stroke::new(1.0_f32, Color32::from_rgb(29, 34, 41));
+    for i in 1..4 {
+        let v = lo + (hi - lo) * i as f32 / 4.0;
+        pt.line_segment([Pos2::new(x_of(v), rect.top()), Pos2::new(x_of(v), rect.bottom())], grid);
+        pt.line_segment([Pos2::new(rect.left(), y_of(v)), Pos2::new(rect.right(), y_of(v))], grid);
+    }
+    // Unity line: what comes out untouched
+    pt.line_segment([Pos2::new(x_of(lo), y_of(lo)), Pos2::new(x_of(hi), y_of(hi))], Stroke::new(1.0_f32, LINE2));
+    if let Some(t) = thr {
+        let x = x_of(t);
+        let mut y = rect.top();
+        while y < rect.bottom() {
+            pt.line_segment([Pos2::new(x, y), Pos2::new(x, (y + 3.0).min(rect.bottom()))], Stroke::new(1.0_f32, color.gamma_multiply(0.6)));
+            y += 6.0;
+        }
+    }
+    let pts: Vec<Pos2> = (0..=80).map(|i| lo + (hi - lo) * i as f32 / 80.0).map(|v| Pos2::new(x_of(v), y_of(curve(v)))).collect();
+    pt.add(Shape::line(pts, Stroke::new(2.0_f32, if active { color } else { DIM })));
+    let label = if lo < -1.5 { format!("{lo:.0} … {hi:.0} dB") } else { "entrada → salida".into() };
+    pt.text(Pos2::new(rect.left() + 5.0, rect.top() + 4.0), Align2::LEFT_TOP, label, FontId::monospace(9.0), DIM);
+    pt.rect_stroke(rect, 3.0, Stroke::new(1.0_f32, LINE), StrokeKind::Inside);
+}
+
+/// Vertical gain-reduction meter, 0 … −24 dB, filled from the top like a hardware GR meter
+fn gr_meter(ui: &mut egui::Ui, v: f32, color: Color32) {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(46.0, 130.0), Sense::hover());
+    let pt = ui.painter_at(rect);
+    let bar = Rect::from_min_max(Pos2::new(rect.right() - 16.0, rect.top() + 14.0), Pos2::new(rect.right() - 4.0, rect.bottom() - 18.0));
+    pt.rect_filled(bar, 2.0, DARK);
+    pt.rect_stroke(bar, 2.0, Stroke::new(1.0_f32, LINE), StrokeKind::Outside);
+    for d in [0.0f32, -6.0, -12.0, -18.0, -24.0] {
+        let y = bar.top() + (-d / 24.0) * bar.height();
+        pt.text(Pos2::new(bar.left() - 4.0, y), Align2::RIGHT_CENTER, format!("{d:.0}"), FontId::monospace(8.5), DIM);
+    }
+    let t = (-v / 24.0).clamp(0.0, 1.0);
+    if t > 0.002 {
+        pt.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width(), bar.height() * t)), 1.0, color);
+    }
+    pt.text(Pos2::new(bar.center().x - 6.0, rect.top() + 5.0), Align2::CENTER_CENTER, "GR", FontId::monospace(9.0), DIM);
+    let active = v < -0.5;
+    pt.text(Pos2::new(rect.center().x, rect.bottom() - 7.0), Align2::CENTER_CENTER, format!("{:.1}", v.min(0.0)), FontId::monospace(10.5), if active { WARN } else { DIM });
+    resp.on_hover_text("Reducción de ganancia ahora, dB");
+}
+
+struct Graph<'a> {
+    curve: &'a dyn Fn(f32) -> f32,
+    range: (f32, f32),
+    thr: Option<f32>,
+}
+
+/// A stage's controls: header (switch, title, note), actions, then curve · knobs · GR meter in one row
+#[allow(clippy::too_many_arguments)]
+fn module_card(
+    ui: &mut egui::Ui,
+    title: &str,
+    color: Color32,
+    setter: &ParamSetter,
+    on: &BoolParam,
+    gr: Option<f32>,
+    graph: Option<Graph>,
+    note: &str,
+    actions: impl FnOnce(&mut egui::Ui),
+    knobs: impl FnOnce(&mut egui::Ui),
+) {
     let active = on.value();
     panel(ui, Some(if active { color } else { LINE2 }), |ui| {
-        ui.set_min_width(width - 22.0);
-        ui.set_max_width(width - 22.0);
+        ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             switch(ui, setter, on, color, ["ON", "OFF"]);
-            ui.label(egui::RichText::new(title).strong().size(13.0).color(if active { TEXT } else { DIM }));
-            if let Some(v) = gr {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| gr_badge(ui, v));
-            }
+            ui.label(egui::RichText::new(title.to_uppercase()).strong().size(12.5).color(if active { TEXT } else { DIM }));
+            ui.add_space(6.0);
+            ui.horizontal(|ui| actions(ui));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if !note.is_empty() {
+                    ui.label(small(note));
+                }
+            });
         });
-        ui.horizontal_wrapped(|ui| actions(ui));
-        ui.add_space(2.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(2.0, 4.0);
-            if !active {
-                ui.multiply_opacity(0.6);
+        ui.add_space(6.0);
+        ui.horizontal_top(|ui| {
+            if let Some(g) = graph {
+                transfer_graph(ui, g.curve, g.range, g.thr, color, active);
+                ui.add_space(10.0);
             }
-            knobs(ui)
+            let meter_w = if gr.is_some() { 56.0 } else { 0.0 };
+            let knobs_w = ui.available_width() - meter_w;
+            ui.allocate_ui_with_layout(Vec2::new(knobs_w, 130.0), egui::Layout::left_to_right(egui::Align::Min).with_main_wrap(true), |ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(6.0, 4.0);
+                if !active {
+                    ui.multiply_opacity(0.55);
+                }
+                knobs(ui)
+            });
+            if let Some(v) = gr {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| gr_meter(ui, v, color));
+            }
         });
     });
-    ui.add_space(8.0);
 }
 
-fn modules(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, sh: &Shared, st: &mut GuiState) {
+fn stage_panel(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, sh: &Shared, st: &mut GuiState) {
     let s = st.shown;
-    let k = 42.0;
-    // Fixed column widths from the window (minus margins and scrollbar), so nothing can widen them
-    let gap = 8.0;
-    let total = ui.available_width().min(ui.ctx().screen_rect().width() - 40.0);
-    let w = ((total - gap * 2.0) / 3.0).floor();
-    let column = |ui: &mut egui::Ui, body: &mut dyn FnMut(&mut egui::Ui)| {
-        ui.allocate_ui_with_layout(Vec2::new(w, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
-            ui.set_max_width(w);
-            body(ui)
-        });
-    };
-    ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing.x = gap;
-        // Column 1: noise reduction and gate
-        column(ui, &mut |ui| {
+    let k = 44.0;
+    let cs = p.settings();
+    match st.stage {
+        Stage::Eq => bands_strip(ui, setter, p, st),
+        Stage::Noise => {
             let n = &p.noise;
             module_card(
                 ui,
-                w,
                 "Reducción de ruido",
                 C_NOISE,
                 setter,
                 &n.on,
                 Some(s[2]),
+                None,
+                "Aprender: reproduce un tramo sin voz (solo el ruido de la sala)",
                 |ui| {
                     segmented(ui, setter, &n.mode, C_NOISE);
                     let learning = sh.learning.load(Ordering::Relaxed);
@@ -955,8 +1082,21 @@ fn modules(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, sh: &Shared,
                     knob(ui, setter, &n.from_hz, "Desde", C_NOISE, k, false);
                 },
             );
+        }
+        Stage::Gate => {
             let g = &p.gate;
-            module_card(ui, w, "Puerta de ruido / expansor", C_GATE, setter, &g.on, Some(s[3]), |ui| segmented(ui, setter, &g.mode, C_GATE), |ui| {
+            let gs = cs.gate;
+            let curve = move |x: f32| {
+                if !gs.on || x >= gs.threshold_db {
+                    x
+                } else if gs.mode == GateMode::Gate {
+                    x + gs.range_db.min(0.0)
+                } else {
+                    x + gs.range_db.min(0.0).max((x - gs.threshold_db) * (gs.ratio.max(1.0) - 1.0))
+                }
+            };
+            let title = "Puerta de ruido / expansor";
+            module_card(ui, title, C_GATE, setter, &g.on, Some(s[3]), Some(Graph { curve: &curve, range: (-80.0, 0.0), thr: Some(gs.threshold_db) }), "", |ui| segmented(ui, setter, &g.mode, C_GATE), |ui| {
                 knob(ui, setter, &g.threshold, "Umbral", C_GATE, k, false);
                 if g.mode.value() == GateModeP::Gate {
                     knob(ui, setter, &g.hysteresis, "Histéresis", C_GATE, k, false);
@@ -970,18 +1110,18 @@ fn modules(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, sh: &Shared,
                 knob(ui, setter, &g.key_hpf, "Clave HPF", C_GATE, k, false);
                 knob(ui, setter, &g.key_lpf, "Clave LPF", C_GATE, k, false);
             });
-        });
-        // Column 2: de-esser and compressors
-        column(ui, &mut |ui| {
+        }
+        Stage::DeEss => {
             let d = &p.deesser;
             module_card(
                 ui,
-                w,
                 "De-esser",
                 C_DEESS,
                 setter,
                 &d.on,
                 Some(s[4]),
+                None,
+                "Escucha = oír solo la banda que detecta, para afinar la frecuencia",
                 |ui| {
                     segmented(ui, setter, &d.mode, C_DEESS);
                     switch(ui, setter, &d.listen, C_DEESS, ["ESCUCHA", "ESCUCHA"]);
@@ -994,38 +1134,58 @@ fn modules(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, sh: &Shared,
                     knob(ui, setter, &d.range, "Reducción máx.", C_DEESS, k, false);
                 },
             );
-            comp_card(ui, w, "Compresor 1 · picos", C_COMP1, setter, &p.comp1, s[5], k);
-            comp_card(ui, w, "Compresor 2 · nivelador", C_COMP2, setter, &p.comp2, s[6], k);
-        });
-        // Column 3: saturation and limiter
-        column(ui, &mut |ui| {
+        }
+        Stage::Comp1 => comp_card(ui, "Compresor 1 · picos", C_COMP1, setter, &p.comp1, cs.comp1, s[5], k),
+        Stage::Comp2 => comp_card(ui, "Compresor 2 · nivelador", C_COMP2, setter, &p.comp2, cs.comp2, s[6], k),
+        Stage::Sat => {
             let sa = &p.saturation;
-            module_card(ui, w, "Saturador", C_SAT, setter, &sa.on, None, |ui| segmented(ui, setter, &sa.mode, C_SAT), |ui| {
-                knob(ui, setter, &sa.drive, "Drive", C_SAT, k, false);
-                knob(ui, setter, &sa.tone, "Tono", C_SAT, k, false);
-                knob(ui, setter, &sa.mix, "Mezcla", C_SAT, k, false);
-            });
+            let ss = cs.saturation;
+            let drive = db_to_lin(ss.drive_db.max(0.0)) as f64;
+            let wet = ss.mix.clamp(0.0, 100.0) / 100.0;
+            let curve = move |x: f32| if ss.on { x * (1.0 - wet) + saturate(x as f64, drive, ss.mode) as f32 * wet } else { x };
+            module_card(
+                ui,
+                "Saturador",
+                C_SAT,
+                setter,
+                &sa.on,
+                None,
+                Some(Graph { curve: &curve, range: (-1.0, 1.0), thr: None }),
+                "Sobremuestreo 4×: armónicos sin aliasing",
+                |ui| segmented(ui, setter, &sa.mode, C_SAT),
+                |ui| {
+                    knob(ui, setter, &sa.drive, "Drive", C_SAT, k, false);
+                    knob(ui, setter, &sa.tone, "Tono", C_SAT, k, false);
+                    knob(ui, setter, &sa.mix, "Mezcla", C_SAT, k, false);
+                },
+            );
+        }
+        Stage::Lim => {
             let l = &p.limiter;
-            module_card(ui, w, "Limitador (look-ahead)", C_LIM, setter, &l.on, Some(s[7]), |_| {}, |ui| {
+            let ls = cs.limiter;
+            let curve = move |x: f32| if ls.on { x.min(ls.ceiling_db) } else { x };
+            let note = format!("True peak, sin recortar la onda · latencia fija {:.1} ms (el DAW la compensa)", latency_ms(sh.sample_rate.load(Ordering::Relaxed)));
+            module_card(ui, "Limitador (look-ahead)", C_LIM, setter, &l.on, Some(s[7]), Some(Graph { curve: &curve, range: (-30.0, 0.0), thr: Some(ls.ceiling_db) }), &note, |_| {}, |ui| {
                 knob(ui, setter, &l.ceiling, "Techo", C_LIM, k, false);
                 knob(ui, setter, &l.release, "Liberación", C_LIM, k, false);
             });
-            ui.label(small("Ni los picos entre muestras (true peak) pasan del techo, y sin recortar la onda: protege la mezcla y los oídos de un grito o un golpe al micro."));
-            ui.add_space(4.0);
-            ui.label(small(&format!("Latencia fija de {:.1} ms: el DAW la compensa solo.", latency_ms(sh.sample_rate.load(Ordering::Relaxed)))));
-        });
-    });
+        }
+    }
 }
 
-fn comp_card(ui: &mut egui::Ui, w: f32, title: &str, color: Color32, setter: &ParamSetter, c: &CompParams, gr: f32, k: f32) {
+#[allow(clippy::too_many_arguments)]
+fn comp_card(ui: &mut egui::Ui, title: &str, color: Color32, setter: &ParamSetter, c: &CompParams, cs: CompSettings, gr: f32, k: f32) {
+    let makeup = cs.makeup_db + if cs.auto_makeup { auto_makeup_db(cs.threshold_db, cs.ratio, cs.knee_db) } else { 0.0 };
+    let curve = move |x: f32| if cs.on { compressor_curve(x, cs.threshold_db, cs.ratio.max(1.0), cs.knee_db.max(0.0)) + makeup } else { x };
     module_card(
         ui,
-        w,
         title,
         color,
         setter,
         &c.on,
         Some(gr),
+        Some(Graph { curve: &curve, range: (-60.0, 0.0), thr: Some(cs.threshold_db) }),
+        "",
         |ui| {
             segmented(ui, setter, &c.detector, color);
             switch(ui, setter, &c.auto_makeup, color, ["AUTO GAIN", "AUTO GAIN"]);

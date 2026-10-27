@@ -32,7 +32,8 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
   change in Rust**; on top of the app, the Rust gate/de-esser/compressors/limiter are linked across channels (stereo
   keeps its image) and the EQ, input/output gains glide for automation; `cargo test` (`plugin/tests/parity.rs`) compares the Rust chain against the app's output
   (`core/processor/pluginParity.ts`). Presets come from `presets.json` (all use × mic), preset files are the app's JSON.
-  `editor.rs` draws the app's processor look (knobs, meters, flow, EQ with spectrum). Built by
+  `editor.rs` draws the app's processor look (knobs, meters, flow, EQ with spectrum); the signal-flow blocks pick the
+  stage shown in the lower panel (EQ bands, or one module with transfer curve + GR meter), so the window never scrolls. Built by
   `.github/workflows/plugin.yml` (Windows + macOS universal) on `plugin-vX.Y.Z` releases. Locally on Windows: Rust gnu
   toolchain linked with llvm-mingw (`cargo xtask bundle gritometro_procesador --release`; `--features standalone` = window
   without a DAW).

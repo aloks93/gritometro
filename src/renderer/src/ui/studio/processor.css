@@ -504,10 +504,10 @@
   cursor: default;
 }
 .vp .vp-knob-label {
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--vp-dim);
+  color: #9aa3b2;
   white-space: nowrap;
 }
 .vp .vp-knob-track {
@@ -540,7 +540,7 @@
   border: 1px solid transparent;
   background: transparent;
   text-align: center;
-  font: 600 11px var(--vp-mono);
+  font: 600 11.5px var(--vp-mono);
   color: var(--vp-text);
 }
 .vp input.vp-knob-value-text:hover,
@@ -846,16 +846,28 @@
 
 /* modules */
 .vp .vp-modules {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+  /* Rows wrap and every card grows: no holes at the end of a row, cards of a row share its height */
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  align-items: start;
 }
 .vp .vp-module {
+  flex: 1 1 370px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   border-top: 2px solid var(--mod);
+  container-type: inline-size;
+}
+/* Narrow card: the curve goes on top so the knobs get the whole width */
+@container (max-width: 440px) {
+  .vp .vp-module-body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .vp .vp-module-graph {
+    align-self: flex-start;
+  }
 }
 .vp .vp-module.off .vp-knobs,
 .vp .vp-module.off .vp-module-graph {
@@ -869,8 +881,10 @@
 .vp .vp-module-head b {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  line-height: 1.25;
+  min-width: 0;
 }
 .vp .vp-module-actions {
   display: flex;
@@ -902,6 +916,31 @@
 .vp .vp-badge.on {
   color: var(--mod);
   border-color: var(--mod);
+}
+.vp .vp-grm {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.vp .vp-grm b {
+  display: inline-block;
+  min-width: 4ch;
+  text-align: right;
+  font-weight: 600;
+}
+.vp .vp-grm-bar {
+  width: 48px;
+  height: 6px;
+  display: flex;
+  justify-content: flex-end;
+  background: #0c0e12;
+  border: 1px solid var(--vp-line-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.vp .vp-grm-bar i {
+  background: var(--mod, var(--vp-warn));
+  transition: width 60ms linear;
 }
 .vp .vp-gate-led {
   width: 11px;

@@ -1186,12 +1186,18 @@ function Module({ id, title, on, onToggle, live, actions, graph, children }: { i
   )
 }
 
+/** Live gain reduction: a meter that grows from the right (0 … −24 dB) and the value */
 function GrBadge({ pick, label = 'GR' }: { pick: (l: ProcessorLevels) => number; label?: string }): JSX.Element {
   const l = useLevels(15)
   const v = l ? pick(l) : 0
+  const pct = Math.min(100, (-Math.min(0, v) / 24) * 100)
   return (
-    <span className={`vp-badge ${v < -0.5 ? 'on' : ''}`}>
-      {label} {v > -0.1 ? '0.0' : v.toFixed(1)} dB
+    <span className={`vp-badge vp-grm ${v < -0.5 ? 'on' : ''}`} title="Reducción de ganancia ahora (escala 0 … −24 dB)">
+      {label}
+      <span className="vp-grm-bar">
+        <i style={{ width: `${pct}%` }} />
+      </span>
+      <b>{v > -0.1 ? '0.0' : v.toFixed(1)}</b> dB
     </span>
   )
 }

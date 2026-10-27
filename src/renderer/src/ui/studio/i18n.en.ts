@@ -545,6 +545,7 @@ export const EN: Record<string, string> = {
   'Limitador del canal': 'Channel limiter',
   Reducción: 'Reduction',
   Techo: 'Ceiling',
+  'Reducción de ganancia ahora (escala 0 … −24 dB)': 'Gain reduction now (scale 0 … −24 dB)',
   Ducking: 'Ducking',
   'Entrada que hace bajar a esta': 'Input that makes this one duck',
   'Baja cuando suena…': 'Ducks when this plays…',
