@@ -1037,7 +1037,7 @@ dependencies = [
 
 [[package]]
 name = "gritometro_procesador"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "atomic_float",
  "nih_plug",

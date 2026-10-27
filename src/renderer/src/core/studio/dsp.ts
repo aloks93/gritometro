@@ -129,10 +129,11 @@ export function highPass(hz: number, sampleRate: number, q = Math.SQRT1_2): Biqu
 
 // ---- True peak (ITU-R BS.1770 annex 2): 4x oversampling with a windowed-sinc interpolator
 
-const OVERSAMPLE = 4
-const TAPS_PER_PHASE = 12
+export const OVERSAMPLE = 4
+export const TAPS_PER_PHASE = 12
 
-const POLYPHASE: Float64Array[] = (() => {
+/** The interpolator's phases (unity DC gain each); also used by the processor's true-peak limiter */
+export const POLYPHASE: Float64Array[] = (() => {
   const n = OVERSAMPLE * TAPS_PER_PHASE
   const h = new Float64Array(n)
   const mid = (n - 1) / 2

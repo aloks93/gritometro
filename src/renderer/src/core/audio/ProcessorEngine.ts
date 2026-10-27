@@ -1,6 +1,6 @@
 import type { ProcessorConfig } from '../processor/processor'
 import { bandStages, MAX_BANDS, STAGES_PER_BAND } from '../processor/processor'
-import { lookaheadSamples } from '../processor/dynamics'
+import { dynamicsLatency } from '../processor/dynamics'
 import { noiseLatency } from '../processor/noise'
 import { dbToGain } from '../mixer/mixer'
 // Bundled as its own script so the worklet can import the shared DSP
@@ -10,7 +10,7 @@ import workletUrl from './processor.worklet.ts?worker&url'
 // device (VoiceMeeter Input, a virtual cable…) plus an optional headphone monitor.
 //
 // mic → channel → input gain → phase ─┬→ noise reduction → gate → [EQ] → de-esser/comp1/comp2/saturation → [EQ] → limiter → wet ─┐
-//                                      └→ delay (= noise frame + look-ahead) → dry (bypass) ──────────────────────────────────────┴→ output gain
+//                                      └→ delay (= noise frame + oversampling + look-ahead) → dry (bypass) ──────────────────────────────────────┴→ output gain
 // output gain → mute → output device · → monitor level → headphones · → loudness meter · → stream (studio analyzers)
 
 export type ProcessorStatus = 'off' | 'starting' | 'on' | 'error'
@@ -164,7 +164,7 @@ export class ProcessorEngine {
       this.applyParams(newest)
       if (ctx.state === 'suspended') await ctx.resume()
       const settings = track.getSettings() as MediaTrackSettings & { latency?: number }
-      const latencyMs = ((settings.latency ?? 0) + ctx.baseLatency + (ctx.outputLatency ?? 0)) * 1000 + ((lookaheadSamples(ctx.sampleRate) + g.noiseSize) / ctx.sampleRate) * 1000
+      const latencyMs = ((settings.latency ?? 0) + ctx.baseLatency + (ctx.outputLatency ?? 0)) * 1000 + ((dynamicsLatency(ctx.sampleRate) + g.noiseSize) / ctx.sampleRate) * 1000
       this.setState({
         status: 'on',
         sampleRate: ctx.sampleRate,
@@ -256,9 +256,9 @@ export class ProcessorEngine {
     // Every band has its stages in the graph all the time: editing never rebuilds
     const eq = Array.from({ length: MAX_BANDS * STAGES_PER_BAND }, () => mono(ctx.createBiquadFilter()) as BiquadFilterNode)
     const wet = mono(ctx.createGain()) as GainNode
-    const dryDelay = ctx.createDelay(0.05)
+    const dryDelay = ctx.createDelay(0.2)
     // The dry path waits exactly as long as the processed one, so A/B never shifts in time
-    dryDelay.delayTime.value = (lookaheadSamples(ctx.sampleRate) + noiseSize) / ctx.sampleRate
+    dryDelay.delayTime.value = (dynamicsLatency(ctx.sampleRate) + noiseSize) / ctx.sampleRate
     const dry = mono(ctx.createGain()) as GainNode
     const outGain = mono(ctx.createGain()) as GainNode
     const outMeter = analyser(ctx, 2048)

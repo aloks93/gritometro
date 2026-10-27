@@ -2,7 +2,7 @@
 // (TypeScript, src/renderer/src/core/processor/pluginParity.ts) for a test signal; the Rust chain
 // has to reproduce it. Regenerate with `npm run plugin:presets` after changing the app's DSP.
 
-use gritometro_procesador::dsp::{lin_to_db, Chain};
+use gritometro_procesador::dsp::{lin_to_db, Chain, SAT_LATENCY};
 use gritometro_procesador::presets::{bundle, settings_of};
 use serde::Deserialize;
 
@@ -40,11 +40,11 @@ fn plugin_matches_the_app_chain() {
     let input = signal(fx.length, fx.rate as f64);
     for case in &fx.cases {
         let settings = settings_of(&bundle().chains[&case.key]);
-        let mut chain = Chain::new(fx.rate);
+        let mut chain = Chain::new(fx.rate, 1);
         let mut buf = input.clone();
         // A different block size than the app's 128 on purpose: results must not depend on it
         for block in buf.chunks_mut(512) {
-            chain.process(block, &settings);
+            chain.process(&mut [block], &settings);
         }
         let (mut err, mut sig, mut worst) = (0.0f64, 0.0f64, 0.0f32);
         for (k, &expected) in case.out.iter().enumerate() {
@@ -66,12 +66,12 @@ fn plugin_matches_the_app_chain() {
 #[test]
 fn limiter_never_passes_the_ceiling_and_latency_is_constant() {
     let settings = settings_of(&bundle().chains["recorded|condenser"]);
-    let mut chain = Chain::new(48000.0);
+    let mut chain = Chain::new(48000.0, 1);
     let lat = chain.latency();
-    assert_eq!(lat, 1024 + 72);
+    assert_eq!(lat, 1024 + SAT_LATENCY + 72 + 5);
     let mut buf: Vec<f32> = (0..48000).map(|i| 2.0 * (i as f32 * 0.05).sin()).collect();
     for block in buf.chunks_mut(256) {
-        chain.process(block, &settings);
+        chain.process(&mut [block], &settings);
     }
     let peak = buf.iter().fold(0.0f32, |m, x| m.max(x.abs()));
     assert!(lin_to_db(peak) <= settings.limiter.ceiling_db + 0.01, "peak {peak}");
@@ -81,8 +81,8 @@ fn limiter_never_passes_the_ceiling_and_latency_is_constant() {
 fn noise_reduction_lowers_steady_noise() {
     let mut s = settings_of(&bundle().chains["recorded|condenser"]);
     s.gate.on = false;
-    let mut on = Chain::new(48000.0);
-    let mut off = Chain::new(48000.0);
+    let mut on = Chain::new(48000.0, 1);
+    let mut off = Chain::new(48000.0, 1);
     let mut off_s = s;
     off_s.noise.on = false;
     let mut seed: u32 = 1;
@@ -94,9 +94,48 @@ fn noise_reduction_lowers_steady_noise() {
         .collect();
     let (mut a, mut b) = (noise.clone(), noise);
     for (x, y) in a.chunks_mut(480).zip(b.chunks_mut(480)) {
-        on.process(x, &s);
-        off.process(y, &off_s);
+        on.process(&mut [x], &s);
+        off.process(&mut [y], &off_s);
     }
     let rms = |v: &[f32]| (v[48000..].iter().map(|x| x * x).sum::<f32>() / 48000.0).sqrt();
     assert!(lin_to_db(rms(&a)) < lin_to_db(rms(&b)) - 8.0, "{} vs {}", rms(&a), rms(&b));
+}
+
+#[test]
+fn stereo_dynamics_are_linked_so_the_image_holds() {
+    // Loud left, quiet right: both sides must get the same compression and limiting
+    let s = settings_of(&bundle().chains["recorded|condenser"]);
+    let mut chain = Chain::new(48000.0, 2);
+    let tone = |a: f32| -> Vec<f32> { (0..48000).map(|i| a * (i as f32 * 2.0 * std::f32::consts::PI * 300.0 / 48000.0).sin()).collect() };
+    let (mut l, mut r) = (tone(0.9), tone(0.1));
+    for (a, b) in l.chunks_mut(480).zip(r.chunks_mut(480)) {
+        chain.process(&mut [a, b], &s);
+    }
+    let rms = |v: &[f32]| (v[24000..].iter().map(|x| x * x).sum::<f32>() / 24000.0).sqrt();
+    let ratio = lin_to_db(rms(&l)) - lin_to_db(rms(&r));
+    // The input difference is 19.1 dB; independent compression would squash it
+    assert!((ratio - 19.08).abs() < 0.5, "image moved: L−R {ratio:.2} dB");
+}
+
+#[test]
+fn automating_the_eq_glides_without_clicks() {
+    let mut s = settings_of(&bundle().chains["recorded|condenser"]);
+    s.noise.on = false;
+    s.gate.on = false;
+    let mut chain = Chain::new(48000.0, 1);
+    let mut buf: Vec<f32> = (0..48000).map(|i| 0.3 * (i as f32 * 2.0 * std::f32::consts::PI * 1000.0 / 48000.0).sin()).collect();
+    let peaking = s.bands.iter().position(|b| b.on && b.kind == gritometro_procesador::dsp::BandType::Peaking).expect("a peaking band");
+    for (k, block) in buf.chunks_mut(256).enumerate() {
+        // A jump of +12 dB at 1 kHz in the middle of the signal, as a DAW automation step
+        if k == 90 {
+            s.bands[peaking].freq = 1000.0;
+            s.bands[peaking].gain_db = 12.0;
+        }
+        chain.process(&mut [block], &s);
+    }
+    // Second difference relative to the peak: a smooth 1 kHz sine stays at (2π·1000/48000)² ≈ 0.017,
+    // a click (a corner in the wave) shows as a spike
+    let peak = buf[20000..].iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    let bend = buf[20000..].windows(3).fold(0.0f32, |m, w| m.max((w[2] - 2.0 * w[1] + w[0]).abs()));
+    assert!(bend / peak < 0.018, "click: {} for peak {peak}", bend / peak);
 }

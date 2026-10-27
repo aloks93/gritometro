@@ -486,7 +486,7 @@ impl Default for ProcParams {
             },
             limiter: LimiterParams {
                 on: BoolParam::new("Limitador activo", true),
-                ceiling: db("Limitador techo", -1.0, -12.0, 0.0),
+                ceiling: db("Limitador techo", -1.0, -12.0, 0.0).with_unit(" dBTP"),
                 release: log("Limitador liberación", 60.0, 10.0, 1000.0, " ms"),
             },
         }

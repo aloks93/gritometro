@@ -110,22 +110,24 @@ fn peak_db(buf: &[f32]) -> f32 {
 pub struct GritProcesador {
     params: Arc<ProcParams>,
     shared: Arc<Shared>,
-    /// One independent chain per channel (a mono track in a stereo slot gets identical processing)
-    chains: Vec<Chain>,
+    /// Built for the host's channel count: dynamics linked across channels, the rest per channel
+    chain: Option<Chain>,
+    channels: usize,
 }
 
 impl Default for GritProcesador {
     fn default() -> Self {
-        Self { params: Arc::new(ProcParams::default()), shared: Arc::new(Shared::default()), chains: Vec::new() }
+        Self { params: Arc::new(ProcParams::default()), shared: Arc::new(Shared::default()), chain: None, channels: 2 }
     }
 }
 
 impl GritProcesador {
     fn load_profile(&mut self) {
         let Ok(stored) = self.params.noise_profile.try_read() else { return };
-        for c in self.chains.iter_mut() {
-            let bins = c.noise.bins();
-            c.noise.set_profile(if stored.len() > 1 { Some(resample_profile(&stored, bins)) } else { None });
+        let Some(chain) = self.chain.as_mut() else { return };
+        for ns in chain.noise.iter_mut() {
+            let bins = ns.bins();
+            ns.set_profile(if stored.len() > 1 { Some(resample_profile(&stored, bins)) } else { None });
         }
     }
 }
@@ -156,19 +158,19 @@ impl Plugin for GritProcesador {
     }
 
     fn initialize(&mut self, layout: &AudioIOLayout, config: &BufferConfig, context: &mut impl InitContext<Self>) -> bool {
-        let channels = layout.main_output_channels.map(|c| c.get()).unwrap_or(2) as usize;
+        self.channels = layout.main_output_channels.map(|c| c.get()).unwrap_or(2) as usize;
         let sr = config.sample_rate;
-        self.chains = (0..channels).map(|_| Chain::new(sr)).collect();
+        let chain = Chain::new(sr, self.channels);
+        context.set_latency_samples(chain.latency() as u32);
+        self.chain = Some(chain);
         self.shared.sample_rate.store(sr, Ordering::Relaxed);
         self.load_profile();
-        context.set_latency_samples(self.chains[0].latency() as u32);
         true
     }
 
     fn reset(&mut self) {
         let sr = self.shared.sample_rate.load(Ordering::Relaxed);
-        let n = self.chains.len();
-        self.chains = (0..n).map(|_| Chain::new(sr)).collect();
+        self.chain = Some(Chain::new(sr, self.channels));
         self.load_profile();
     }
 
@@ -176,15 +178,16 @@ impl Plugin for GritProcesador {
         if self.shared.profile_dirty.swap(false, Ordering::Relaxed) {
             nih_plug::util::permit_alloc(|| self.load_profile());
         }
+        let Some(chain) = self.chain.as_mut() else { return ProcessStatus::Normal };
         if self.shared.learn_request.swap(false, Ordering::Relaxed) {
-            self.chains.iter_mut().for_each(|c| c.noise.learn(LEARN_SECONDS));
+            chain.noise.iter_mut().for_each(|ns| ns.learn(LEARN_SECONDS));
         }
         let settings = self.params.settings();
         let gui = self.params.editor_state.is_open();
         let sh = &self.shared;
-        for (ch, data) in buffer.as_slice().iter_mut().enumerate() {
-            let Some(chain) = self.chains.get_mut(ch) else { continue };
-            if gui {
+        let bufs = buffer.as_slice();
+        if gui {
+            for (ch, data) in bufs.iter().enumerate() {
                 hold_max(&sh.in_peak, peak_db(data));
                 // Never blocks: if the editor is reading, this block is simply skipped
                 if ch == 0 {
@@ -193,32 +196,34 @@ impl Plugin for GritProcesador {
                     }
                 }
             }
-            let r = chain.process(data, &settings);
-            if gui {
+        }
+        let r = chain.process(bufs, &settings);
+        if gui {
+            for (ch, data) in bufs.iter().enumerate() {
                 hold_max(&sh.out_peak, peak_db(data));
                 if ch == 0 {
                     if let Ok(mut s) = sh.scope_out.try_lock() {
                         s.push(data);
                     }
                 }
-                hold_min(&sh.noise_db, r.noise_db);
-                hold_min(&sh.gate_db, r.gate_db);
-                hold_min(&sh.deess_gr, r.deess_gr);
-                hold_min(&sh.comp1_gr, r.comp1_gr);
-                hold_min(&sh.comp2_gr, r.comp2_gr);
-                hold_min(&sh.lim_gr, r.lim_gr);
             }
+            hold_min(&sh.noise_db, r.noise_db);
+            hold_min(&sh.gate_db, r.gate_db);
+            hold_min(&sh.deess_gr, r.deess_gr);
+            hold_min(&sh.comp1_gr, r.comp1_gr);
+            hold_min(&sh.comp2_gr, r.comp2_gr);
+            hold_min(&sh.lim_gr, r.lim_gr);
         }
         // A finished capture becomes the stored (saved with the project) profile
-        let learning = self.chains.iter().any(|c| c.noise.learning());
-        sh.learning.store(learning, Ordering::Relaxed);
-        if let Some(profile) = self.chains.first_mut().and_then(|c| c.noise.learned_profile.take()) {
-            nih_plug::util::permit_alloc(|| {
-                if let Ok(mut stored) = self.params.noise_profile.try_write() {
+        sh.learning.store(chain.noise.iter().any(|ns| ns.learning()), Ordering::Relaxed);
+        let params = &self.params;
+        nih_plug::util::permit_alloc(|| {
+            if let Some(profile) = chain.noise[0].take_learned() {
+                if let Ok(mut stored) = params.noise_profile.try_write() {
                     *stored = profile;
                 }
-            });
-        }
+            }
+        });
         ProcessStatus::Normal
     }
 }

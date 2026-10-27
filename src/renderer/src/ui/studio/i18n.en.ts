@@ -1055,7 +1055,7 @@ export const EN: Record<string, string> = {
   'Cinta': 'Tape',
   'Válvula añade armónicos pares (cálida); cinta, impares (redonda)': 'Tube adds even harmonics (warm); tape, odd ones (round)',
   'Drive': 'Drive',
-  'Ninguna muestra pasa del techo: protege a VoiceMeeter, al stream y a los oídos de un grito o un golpe al micro.': 'No sample goes over the ceiling: it protects VoiceMeeter, the stream and ears from a shout or a knock on the mic.',
+  'Ni los picos entre muestras (true peak) pasan del techo, y sin recortar la onda: protege a VoiceMeeter, al stream y a los oídos de un grito o un golpe al micro.': 'Not even the peaks between samples (true peak) go over the ceiling, without clipping the wave: it protects VoiceMeeter, the stream and ears from a shout or a knock on the mic.',
   'Paso 1 de 2': 'Step 1 of 2',
   'Paso 2 de 2': 'Step 2 of 2',
   'Silencio…': 'Silence…',

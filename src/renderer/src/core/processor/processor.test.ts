@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { Compressor, DeEsser, Gate, Limiter, dbToLin, linToDb, lookaheadSamples, saturate } from './dynamics'
+import { Compressor, DeEsser, Gate, Limiter, SAT_LATENCY, Saturator, dbToLin, limiterLatency, linToDb, saturate } from './dynamics'
+import { TruePeakMeter } from '../studio/dsp'
 import {
   autoSetup,
   band,
@@ -36,6 +37,18 @@ function peakDb(buf: Float32Array, from = 0): number {
   let p = 0
   for (let i = from; i < buf.length; i++) p = Math.max(p, Math.abs(buf[i]))
   return linToDb(p)
+}
+
+/** Magnitude of one frequency in the buffer (Goertzel), dB relative to a full-scale sine */
+function toneDb(buf: Float32Array, freq: number, from = 0): number {
+  const w = (2 * Math.PI * freq) / SR
+  let re = 0
+  let im = 0
+  for (let i = from; i < buf.length; i++) {
+    re += buf[i] * Math.cos(w * i)
+    im -= buf[i] * Math.sin(w * i)
+  }
+  return linToDb((2 * Math.hypot(re, im)) / (buf.length - from))
 }
 
 /** Runs a processor over the buffer in 128-sample blocks, like an AudioWorklet */
@@ -138,7 +151,61 @@ describe('processor dynamics', () => {
     const imp = new Float32Array(256)
     imp[0] = 1
     const d = run(off, imp)
-    expect(d.indexOf(1)).toBe(lookaheadSamples(SR))
+    expect(d.indexOf(1)).toBe(limiterLatency(SR))
+  })
+
+  it('limiter holds the true peak (between samples) under the ceiling, without clipping the wave', () => {
+    // fs/4 at 45°: every sample reads 0.707 × the real peak, which sits between samples
+    const x = Float32Array.from({ length: SR }, (_, i) => 1.4 * Math.sin((Math.PI / 2) * i + Math.PI / 4))
+    const out = run(new Limiter(SR, { on: true, ceilingDb: -1, releaseMs: 50 }), x)
+    const tp = new TruePeakMeter()
+    tp.push(out.subarray(0, SR / 2))
+    tp.max = 0
+    tp.push(out.subarray(SR / 2))
+    // Within the 4× interpolator's own reading error (BS.1770 allows ~0.5 dB at 4×)
+    expect(linToDb(tp.max)).toBeLessThan(-1 + 0.2)
+    // A steady gain, not clipping: the samples keep the shape of the sine
+    expect(peakDb(out, SR / 2)).toBeLessThan(-3.5)
+    expect(peakDb(out, SR / 2)).toBeGreaterThan(-4.5)
+  })
+
+  it('saturation is oversampled: far less aliasing than the plain curve', () => {
+    const x = sine(9000, -3, 0.25)
+    const p = { on: true, mode: 'amp' as const, driveDb: 18, toneHz: 20000, mix: 100 }
+    const out = run(new Saturator(SR, p), x)
+    const naive = x.map((v) => saturate(v, dbToLin(18), 'amp'))
+    // The 5th harmonic (45 kHz) folds to 3 kHz without oversampling
+    const alias = toneDb(out, 3000, 2000) - toneDb(out, 9000, 2000)
+    const aliasNaive = toneDb(naive, 3000, 2000) - toneDb(naive, 9000, 2000)
+    expect(alias).toBeLessThan(aliasNaive - 15)
+    // Dry (mix 0) comes out delayed exactly like the wet path
+    const imp = new Float32Array(256)
+    imp[0] = 1
+    const d = run(new Saturator(SR, { ...p, mix: 0 }), imp)
+    expect(d.indexOf(1)).toBe(SAT_LATENCY)
+  })
+
+  it('switching a compressor with makeup on mid-signal glides instead of clicking', () => {
+    const x = sine(100, -20, 0.4)
+    const off = { ...comp1Defaults(), on: false, thresholdDb: -40, ratio: 4, attackMs: 10, makeupDb: 12, autoMakeup: false, mix: 100 }
+    const comp = new Compressor(SR, off)
+    const out = x.slice()
+    for (let i = 0; i < out.length; i += 128) {
+      if (i === 4864) comp.set({ ...off, on: true })
+      comp.process(out.subarray(i, i + 128))
+    }
+    // Largest change of the applied gain per sample (skipping the zero crossings)
+    let jump = 0
+    let prev = 1
+    let prevI = 4000
+    for (let i = 4000; i < 8000; i++) {
+      if (Math.abs(x[i]) < 0.02) continue
+      const g = out[i] / x[i]
+      jump = Math.max(jump, Math.abs(g - prev) / (i - prevI || 1))
+      prev = g
+      prevI = i
+    }
+    expect(jump).toBeLessThan(0.01)
   })
 })
 

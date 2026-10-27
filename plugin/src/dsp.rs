@@ -1,6 +1,7 @@
 // Port of the app's processor DSP (src/renderer/src/core/processor/dynamics.ts, noise.ts and the
-// EQ in processor.ts), so the plugin sounds exactly like Gritómetro Procesador. Keep both in sync:
-// a change to the TS DSP needs the same change here.
+// EQ in processor.ts), so the plugin sounds exactly like Gritómetro Procesador de Audio. Keep both
+// in sync: a change to the TS DSP needs the same change here. On top of the app (which is mono), the
+// dynamics are linked across channels so a stereo track keeps its image.
 
 use std::f64::consts::PI;
 
@@ -19,6 +20,47 @@ pub fn lin_to_db(g: f32) -> f32 {
 /// One-pole smoothing coefficient for a time constant in ms
 pub fn coef(ms: f32, sample_rate: f32) -> f32 {
     1.0 - (-1.0 / (ms.max(0.01) / 1000.0 * sample_rate)).exp()
+}
+
+/// Values this small are set to 0: denormals make the CPU crawl after a few seconds of silence
+pub const DENORMAL: f32 = 1e-25;
+
+/// One-pole parameter glide (~20 ms), as in dynamics.ts. It starts at the first target, so a fresh
+/// processor sounds exactly like the static settings, and snaps once it is close enough.
+#[derive(Clone, Copy, Debug)]
+pub struct Smoother {
+    v: f32,
+    k: f32,
+    fresh: bool,
+}
+
+impl Smoother {
+    pub fn new(sample_rate: f32) -> Self {
+        Self { v: 0.0, k: coef(20.0, sample_rate), fresh: true }
+    }
+
+    #[inline]
+    pub fn next(&mut self, target: f32) -> f32 {
+        if self.fresh {
+            self.fresh = false;
+            self.v = target;
+        } else if self.v != target {
+            self.v += (target - self.v) * self.k;
+            if (target - self.v).abs() < 1e-5 {
+                self.v = target;
+            }
+        }
+        self.v
+    }
+
+    /// Resting at `target` (a smoother that never ran starts there)
+    pub fn settled(&mut self, target: f32) -> bool {
+        if self.fresh {
+            self.fresh = false;
+            self.v = target;
+        }
+        self.v == target
+    }
 }
 
 /// Static compressor curve with a quadratic soft knee, dB in → dB out
@@ -94,9 +136,22 @@ impl Section {
         self.z2 = self.b2 * x - self.a2 * y;
         y
     }
+
+    /// Clears denormal state; call once per block
+    pub fn flush(&mut self) {
+        if self.z1.abs() < DENORMAL {
+            self.z1 = 0.0;
+        }
+        if self.z2.abs() < DENORMAL {
+            self.z2 = 0.0;
+        }
+    }
 }
 
 // ---- Gate / expander
+
+/// Channels a linked processor handles (stereo); every channel gets the same gain
+pub const MAX_CHANNELS: usize = 2;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum GateMode {
@@ -119,40 +174,66 @@ pub struct GateSettings {
     pub key_lpf_hz: f32,
 }
 
+/// Samples per channel in a block (all channels have the same length)
+fn block_len(bufs: &[&mut [f32]]) -> usize {
+    bufs.first().map_or(0, |b| b.len())
+}
+
 pub struct Gate {
     sample_rate: f32,
     env: f32,
     gain_db: f32,
     hold_left: f32,
-    hpf: Section,
-    lpf: Section,
+    hpf: [Section; MAX_CHANNELS],
+    lpf: [Section; MAX_CHANNELS],
     key: (f32, f32),
+    amt: Smoother,
     pub open: bool,
     pub block_gain_db: f32,
 }
 
 impl Gate {
     pub fn new(sample_rate: f32) -> Self {
-        Self { sample_rate, env: 0.0, gain_db: 0.0, hold_left: 0.0, hpf: Section::default(), lpf: Section::default(), key: (-1.0, -1.0), open: true, block_gain_db: 0.0 }
+        Self {
+            sample_rate,
+            env: 0.0,
+            gain_db: 0.0,
+            hold_left: 0.0,
+            hpf: [Section::default(); MAX_CHANNELS],
+            lpf: [Section::default(); MAX_CHANNELS],
+            key: (-1.0, -1.0),
+            amt: Smoother::new(sample_rate),
+            open: true,
+            block_gain_db: 0.0,
+        }
     }
 
-    pub fn process(&mut self, buf: &mut [f32], p: &GateSettings) {
+    /// Linked: the loudest channel opens the gate for all of them
+    pub fn process(&mut self, bufs: &mut [&mut [f32]], p: &GateSettings) {
         if self.key != (p.key_hpf_hz, p.key_lpf_hz) {
             self.key = (p.key_hpf_hz, p.key_lpf_hz);
-            self.hpf.design(FilterKind::Highpass, p.key_hpf_hz, std::f32::consts::FRAC_1_SQRT_2, self.sample_rate);
-            self.lpf.design(FilterKind::Lowpass, p.key_lpf_hz, std::f32::consts::FRAC_1_SQRT_2, self.sample_rate);
+            for c in 0..MAX_CHANNELS {
+                self.hpf[c].design(FilterKind::Highpass, p.key_hpf_hz, std::f32::consts::FRAC_1_SQRT_2, self.sample_rate);
+                self.lpf[c].design(FilterKind::Lowpass, p.key_lpf_hz, std::f32::consts::FRAC_1_SQRT_2, self.sample_rate);
+            }
         }
         let sr = self.sample_rate;
+        let len = block_len(bufs);
+        let chs = bufs.len().min(MAX_CHANNELS);
         // Peak envelope: instant rise, ~10 ms fall
         let env_decay = (-1.0 / (0.01 * sr)).exp();
-        if !p.on {
-            for &x in buf.iter() {
-                let a = self.lpf.process(self.hpf.process(x)).abs();
+        if !p.on && self.amt.settled(0.0) {
+            for i in 0..len {
+                let mut a = 0.0f32;
+                for c in 0..chs {
+                    a = a.max(self.lpf[c].process(self.hpf[c].process(bufs[c][i])).abs());
+                }
                 self.env = if a > self.env { a } else { self.env * env_decay };
             }
             self.open = true;
             self.gain_db = 0.0;
             self.block_gain_db = 0.0;
+            self.flush();
             return;
         }
         let open_lin = db_to_lin(p.threshold_db);
@@ -162,8 +243,11 @@ impl Gate {
         let hold = p.hold_ms / 1000.0 * sr;
         let range = p.range_db.min(0.0);
         let mut lowest = 0.0f32;
-        for x in buf.iter_mut() {
-            let a = self.lpf.process(self.hpf.process(*x)).abs();
+        for i in 0..len {
+            let mut a = 0.0f32;
+            for c in 0..chs {
+                a = a.max(self.lpf[c].process(self.hpf[c].process(bufs[c][i])).abs());
+            }
             self.env = if a > self.env { a } else { self.env * env_decay };
             let target;
             if p.mode == GateMode::Expander {
@@ -191,10 +275,23 @@ impl Gate {
                 target = if self.open { 0.0 } else { range };
             }
             self.gain_db += (target - self.gain_db) * if target > self.gain_db { att } else { rel };
-            lowest = lowest.min(self.gain_db);
-            *x *= db_to_lin(self.gain_db);
+            // Switching the gate on/off fades its action in/out instead of jumping
+            let g = self.gain_db * self.amt.next(if p.on { 1.0 } else { 0.0 });
+            lowest = lowest.min(g);
+            let lin = db_to_lin(g);
+            for c in 0..chs {
+                bufs[c][i] *= lin;
+            }
         }
         self.block_gain_db = lowest;
+        self.flush();
+    }
+
+    fn flush(&mut self) {
+        self.hpf.iter_mut().chain(self.lpf.iter_mut()).for_each(Section::flush);
+        if self.env < DENORMAL {
+            self.env = 0.0;
+        }
     }
 }
 
@@ -232,21 +329,39 @@ pub struct Compressor {
     sample_rate: f32,
     gr_db: f32,
     ms: f32,
-    sc: Section,
+    sc: [Section; MAX_CHANNELS],
     sc_hz: f32,
+    amt: Smoother,
+    makeup_sm: Smoother,
+    wet_sm: Smoother,
     pub block_gr: f32,
 }
 
 impl Compressor {
     pub fn new(sample_rate: f32) -> Self {
-        Self { sample_rate, gr_db: 0.0, ms: 0.0, sc: Section::default(), sc_hz: -1.0, block_gr: 0.0 }
+        Self {
+            sample_rate,
+            gr_db: 0.0,
+            ms: 0.0,
+            sc: [Section::default(); MAX_CHANNELS],
+            sc_hz: -1.0,
+            amt: Smoother::new(sample_rate),
+            makeup_sm: Smoother::new(sample_rate),
+            wet_sm: Smoother::new(sample_rate),
+            block_gr: 0.0,
+        }
     }
 
-    pub fn process(&mut self, buf: &mut [f32], p: &CompSettings) {
+    /// Linked: the detector follows the loudest channel, every channel gets the same gain
+    pub fn process(&mut self, bufs: &mut [&mut [f32]], p: &CompSettings) {
         if p.sc_hpf_hz != self.sc_hz {
             self.sc_hz = p.sc_hpf_hz;
-            self.sc.design(FilterKind::Highpass, p.sc_hpf_hz, std::f32::consts::FRAC_1_SQRT_2, self.sample_rate);
+            for s in self.sc.iter_mut() {
+                s.design(FilterKind::Highpass, p.sc_hpf_hz, std::f32::consts::FRAC_1_SQRT_2, self.sample_rate);
+            }
         }
+        let len = block_len(bufs);
+        let chs = bufs.len().min(MAX_CHANNELS);
         let att = coef(p.attack_ms, self.sample_rate);
         let rel = coef(p.release_ms, self.sample_rate);
         let rms_k = coef(10.0, self.sample_rate);
@@ -254,31 +369,43 @@ impl Compressor {
         let knee = p.knee_db.max(0.0);
         let wet = p.mix.clamp(0.0, 100.0) / 100.0;
         let makeup = db_to_lin(p.makeup_db + if p.auto_makeup { auto_makeup_db(p.threshold_db, p.ratio, p.knee_db) } else { 0.0 });
+        // Fully off (and done fading out): only the detector runs
+        let off = !p.on && self.amt.settled(0.0);
         let mut lowest = 0.0f32;
-        for s in buf.iter_mut() {
-            let x = *s;
-            let d = self.sc.process(x);
+        for i in 0..len {
+            let mut peak = 0.0f32;
+            for c in 0..chs {
+                peak = peak.max(self.sc[c].process(bufs[c][i]).abs());
+            }
             let level_db = if p.detector == Detector::Rms {
-                self.ms += (d * d - self.ms) * rms_k;
+                self.ms += (peak * peak - self.ms) * rms_k;
                 // +3 dB so a sine reads its peak level, like the peak detector
                 lin_to_db(self.ms.sqrt()) + 3.01
             } else {
-                lin_to_db(d.abs())
+                lin_to_db(peak)
             };
-            if !p.on {
+            if off {
                 continue;
             }
             let target = compressor_curve(level_db, p.threshold_db, ratio, knee) - level_db;
             // More reduction = attack, less = release
             self.gr_db += (target - self.gr_db) * if target < self.gr_db { att } else { rel };
             lowest = lowest.min(self.gr_db);
-            let y = x * db_to_lin(self.gr_db) * makeup;
-            *s = if wet >= 1.0 { y } else { x * (1.0 - wet) + y * wet };
+            let g = db_to_lin(self.gr_db) * self.makeup_sm.next(makeup);
+            let w = self.wet_sm.next(wet) * self.amt.next(if p.on { 1.0 } else { 0.0 });
+            for c in 0..chs {
+                let x = bufs[c][i];
+                bufs[c][i] = x + (x * g - x) * w;
+            }
         }
-        if !p.on {
+        if off {
             self.gr_db = 0.0;
         }
-        self.block_gr = lowest;
+        self.block_gr = if p.on { lowest } else { 0.0 };
+        self.sc.iter_mut().for_each(Section::flush);
+        if self.ms < DENORMAL {
+            self.ms = 0.0;
+        }
     }
 }
 
@@ -304,58 +431,84 @@ pub struct DeEsserSettings {
 
 pub struct DeEsser {
     sample_rate: f32,
-    bp: Section,
-    lp: Section,
+    bp: [Section; MAX_CHANNELS],
+    lp: [Section; MAX_CHANNELS],
     env: f32,
     gr_db: f32,
     key: (f32, f32),
+    amt: Smoother,
     pub block_gr: f32,
 }
 
 impl DeEsser {
     pub fn new(sample_rate: f32) -> Self {
-        Self { sample_rate, bp: Section::default(), lp: Section::default(), env: 0.0, gr_db: 0.0, key: (-1.0, -1.0), block_gr: 0.0 }
+        Self {
+            sample_rate,
+            bp: [Section::default(); MAX_CHANNELS],
+            lp: [Section::default(); MAX_CHANNELS],
+            env: 0.0,
+            gr_db: 0.0,
+            key: (-1.0, -1.0),
+            amt: Smoother::new(sample_rate),
+            block_gr: 0.0,
+        }
     }
 
-    pub fn process(&mut self, buf: &mut [f32], p: &DeEsserSettings) {
+    /// Linked: sibilance on either side turns both down
+    pub fn process(&mut self, bufs: &mut [&mut [f32]], p: &DeEsserSettings) {
         if self.key != (p.freq, p.q) {
             self.key = (p.freq, p.q);
             let f = p.freq.min(self.sample_rate * 0.45).max(1000.0);
-            self.bp.design(FilterKind::Bandpass, f, p.q.max(0.3), self.sample_rate);
-            // Split: low = LP(x), high = x − low, so the bands always add back up exactly
-            self.lp.design(FilterKind::Lowpass, f * 0.6, std::f32::consts::FRAC_1_SQRT_2, self.sample_rate);
+            for c in 0..MAX_CHANNELS {
+                self.bp[c].design(FilterKind::Bandpass, f, p.q.max(0.3), self.sample_rate);
+                // Split: low = LP(x), high = x − low, so the bands always add back up exactly
+                self.lp[c].design(FilterKind::Lowpass, f * 0.6, std::f32::consts::FRAC_1_SQRT_2, self.sample_rate);
+            }
         }
-        if !p.on {
+        if !p.on && self.amt.settled(0.0) {
             self.gr_db = 0.0;
             self.block_gr = 0.0;
             return;
         }
+        let len = block_len(bufs);
+        let chs = bufs.len().min(MAX_CHANNELS);
         let att = coef(0.5, self.sample_rate);
         let rel = coef(60.0, self.sample_rate);
         let env_decay = (-1.0 / (0.02 * self.sample_rate)).exp();
         let range = p.range_db.min(0.0);
         let slope = 1.0 - 1.0 / p.ratio.max(1.0);
         let mut lowest = 0.0f32;
-        for s in buf.iter_mut() {
-            let x = *s;
-            let band = self.bp.process(x);
-            let a = band.abs();
+        let mut band = [0.0f32; MAX_CHANNELS];
+        for i in 0..len {
+            let mut a = 0.0f32;
+            for c in 0..chs {
+                band[c] = self.bp[c].process(bufs[c][i]);
+                a = a.max(band[c].abs());
+            }
             self.env = if a > self.env { a } else { self.env * env_decay };
             let over = lin_to_db(self.env) - p.threshold_db;
             let target = if over > 0.0 { range.max(-over * slope) } else { 0.0 };
             self.gr_db += (target - self.gr_db) * if target < self.gr_db { att } else { rel };
-            lowest = lowest.min(self.gr_db);
-            let g = db_to_lin(self.gr_db);
-            let low = self.lp.process(x);
-            *s = if p.listen {
-                band
-            } else if p.mode == DeEssMode::Wide {
-                x * g
-            } else {
-                low + (x - low) * g
-            };
+            let g_db = self.gr_db * self.amt.next(if p.on { 1.0 } else { 0.0 });
+            lowest = lowest.min(g_db);
+            let g = db_to_lin(g_db);
+            for c in 0..chs {
+                let x = bufs[c][i];
+                let low = self.lp[c].process(x);
+                bufs[c][i] = if p.listen {
+                    band[c]
+                } else if p.mode == DeEssMode::Wide {
+                    x * g
+                } else {
+                    low + (x - low) * g
+                };
+            }
         }
         self.block_gr = lowest;
+        self.bp.iter_mut().chain(self.lp.iter_mut()).for_each(Section::flush);
+        if self.env < DENORMAL {
+            self.env = 0.0;
+        }
     }
 }
 
@@ -377,10 +530,10 @@ pub struct SatSettings {
     pub mix: f32,
 }
 
-const TUBE_BIAS: f32 = 0.25;
+const TUBE_BIAS: f64 = 0.25;
 
 /// Static saturation curve, unity gain for small signals
-pub fn saturate(x: f32, drive: f32, mode: SatMode) -> f32 {
+pub fn saturate(x: f64, drive: f64, mode: SatMode) -> f64 {
     let u = x * drive;
     match mode {
         SatMode::Amp => amp_clip(u) / drive.sqrt(),
@@ -392,23 +545,99 @@ pub fn saturate(x: f32, drive: f32, mode: SatMode) -> f32 {
     }
 }
 
-fn amp_clip(u: f32) -> f32 {
+fn amp_clip(u: f64) -> f64 {
     let lim = if u >= 0.0 { 1.0 } else { 0.7 };
     let v = u / lim;
     lim * v / (1.0 + v.abs().powi(4)).powf(0.25)
+}
+
+/// The curve runs at this many times the sample rate, so its harmonics don't fold back (aliasing)
+const SAT_OS: usize = 4;
+const SAT_TAPS: usize = 129;
+/// Delay of the oversampling filters (up + down), samples; the dry path waits as long
+pub const SAT_LATENCY: usize = (SAT_TAPS - 1) / SAT_OS;
+const SAT_PHASE_TAPS: usize = SAT_TAPS.div_ceil(SAT_OS);
+const SAT_IN_MASK: usize = 63;
+const SAT_OS_MASK: usize = 255;
+
+fn bessel_i0(x: f64) -> f64 {
+    let (mut sum, mut term) = (1.0, 1.0);
+    for k in 1..50 {
+        term *= (x / (2.0 * k as f64)).powi(2);
+        sum += term;
+        if term < 1e-12 * sum {
+            break;
+        }
+    }
+    sum
+}
+
+/// Linear-phase low-pass at the oversampled rate (Kaiser-windowed sinc, cut at 0.45 × the base rate), unity DC gain
+fn sat_fir() -> [f64; SAT_TAPS] {
+    let mut h = [0.0; SAT_TAPS];
+    let mid = (SAT_TAPS - 1) as f64 / 2.0;
+    let fc = 0.45 / SAT_OS as f64;
+    let beta = 8.0;
+    let mut sum = 0.0;
+    for (i, v) in h.iter_mut().enumerate() {
+        let t = i as f64 - mid;
+        let sinc = if t == 0.0 { 2.0 * fc } else { (2.0 * PI * fc * t).sin() / (PI * t) };
+        *v = sinc * bessel_i0(beta * (1.0 - (t / mid).powi(2)).sqrt()) / bessel_i0(beta);
+        sum += *v;
+    }
+    h.iter_mut().for_each(|v| *v /= sum);
+    h
 }
 
 pub struct Saturator {
     sample_rate: f32,
     tone: Section,
     tone_hz: f32,
-    dc: f32,
-    dc_in: f32,
+    dc: f64,
+    dc_in: f64,
+    amt: Smoother,
+    drive_sm: Smoother,
+    wet_sm: Smoother,
+    fir: [f64; SAT_TAPS],
+    /// Interpolator phases: output k = SAT_OS · Σ h[k + SAT_OS·m] · x[t − m]
+    phases: [[f64; SAT_PHASE_TAPS]; SAT_OS],
+    /// Dry path, delayed like the oversampled one
+    dry: [f32; SAT_LATENCY],
+    dry_pos: usize,
+    xh: [f64; SAT_IN_MASK + 1],
+    x_pos: usize,
+    os: [f64; SAT_OS_MASK + 1],
+    os_pos: usize,
 }
 
 impl Saturator {
     pub fn new(sample_rate: f32) -> Self {
-        Self { sample_rate, tone: Section::default(), tone_hz: -1.0, dc: 0.0, dc_in: 0.0 }
+        let fir = sat_fir();
+        let mut phases = [[0.0; SAT_PHASE_TAPS]; SAT_OS];
+        for (k, ph) in phases.iter_mut().enumerate() {
+            for (m, v) in ph.iter_mut().enumerate() {
+                let i = k + SAT_OS * m;
+                *v = if i < SAT_TAPS { fir[i] * SAT_OS as f64 } else { 0.0 };
+            }
+        }
+        Self {
+            sample_rate,
+            tone: Section::default(),
+            tone_hz: -1.0,
+            dc: 0.0,
+            dc_in: 0.0,
+            amt: Smoother::new(sample_rate),
+            drive_sm: Smoother::new(sample_rate),
+            wet_sm: Smoother::new(sample_rate),
+            fir,
+            phases,
+            dry: [0.0; SAT_LATENCY],
+            dry_pos: 0,
+            xh: [0.0; SAT_IN_MASK + 1],
+            x_pos: 0,
+            os: [0.0; SAT_OS_MASK + 1],
+            os_pos: 0,
+        }
     }
 
     pub fn process(&mut self, buf: &mut [f32], p: &SatSettings) {
@@ -417,30 +646,63 @@ impl Saturator {
             let hz = if p.tone_hz >= 19000.0 { 0.0 } else { p.tone_hz };
             self.tone.design(FilterKind::Lowpass, hz, std::f32::consts::FRAC_1_SQRT_2, self.sample_rate);
         }
-        if !p.on {
-            return;
-        }
+        // The delay always runs, so latency doesn't change when the saturator is switched
+        let off = !p.on && self.amt.settled(0.0);
         let drive = db_to_lin(p.drive_db.max(0.0));
         let wet = p.mix.clamp(0.0, 100.0) / 100.0;
         // DC blocker after the asymmetric curve (~5 Hz)
-        let r = 1.0 - (2.0 * std::f32::consts::PI * 5.0) / self.sample_rate;
+        let r = 1.0 - (2.0 * PI * 5.0) / self.sample_rate as f64;
         for s in buf.iter_mut() {
             let x = *s;
-            let sat = saturate(x, drive, p.mode);
+            let d = self.dry[self.dry_pos];
+            self.dry[self.dry_pos] = x;
+            self.dry_pos = (self.dry_pos + 1) % SAT_LATENCY;
+            self.xh[self.x_pos] = x as f64;
+            if off {
+                self.x_pos = (self.x_pos + 1) & SAT_IN_MASK;
+                *s = d;
+                continue;
+            }
+            // Up 4×, saturate, back down: the harmonics above the base Nyquist are filtered out
+            let dr = self.drive_sm.next(drive) as f64;
+            for (k, ph) in self.phases.iter().enumerate() {
+                let mut acc = 0.0;
+                for (m, c) in ph.iter().enumerate() {
+                    acc += c * self.xh[self.x_pos.wrapping_sub(m) & SAT_IN_MASK];
+                }
+                self.os[(self.os_pos + k) & SAT_OS_MASK] = saturate(acc, dr, p.mode);
+            }
+            // Symmetric filter: pair the taps that share a coefficient
+            let half = (SAT_TAPS - 1) / 2;
+            let mut sat = self.fir[half] * self.os[self.os_pos.wrapping_sub(half) & SAT_OS_MASK];
+            for j in 0..half {
+                sat += self.fir[j] * (self.os[self.os_pos.wrapping_sub(j) & SAT_OS_MASK] + self.os[self.os_pos.wrapping_sub(SAT_TAPS - 1 - j) & SAT_OS_MASK]);
+            }
+            self.os_pos = (self.os_pos + SAT_OS) & SAT_OS_MASK;
+            self.x_pos = (self.x_pos + 1) & SAT_IN_MASK;
             let y = sat - self.dc_in + r * self.dc;
             self.dc_in = sat;
             self.dc = y;
-            let t = self.tone.process(y);
-            *s = x * (1.0 - wet) + t * wet;
+            let t = self.tone.process(y as f32);
+            let w = self.wet_sm.next(wet) * self.amt.next(if p.on { 1.0 } else { 0.0 });
+            *s = d + (t - d) * w;
+        }
+        self.tone.flush();
+        if self.dc.abs() < DENORMAL as f64 {
+            self.dc = 0.0;
+        }
+        if self.dc_in.abs() < DENORMAL as f64 {
+            self.dc_in = 0.0;
         }
     }
 }
 
-// ---- Look-ahead limiter
+// ---- Look-ahead true-peak limiter
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct LimiterSettings {
     pub on: bool,
+    /// True-peak ceiling: inter-sample peaks stay below it
     pub ceiling_db: f32,
     pub release_ms: f32,
 }
@@ -451,51 +713,171 @@ pub fn lookahead_samples(sample_rate: f32) -> usize {
     ((LOOKAHEAD_MS / 1000.0 * sample_rate).round() as usize).max(1)
 }
 
+/// The true-peak interpolator reports a peak this many samples after it entered
+const TP_DELAY: usize = 5;
+/// Oversampling of the true-peak detector (ITU-R BS.1770 annex 2), as the app's meter
+const TP_OS: usize = 4;
+const TP_TAPS: usize = 12;
+
+/// Total delay of the limiter (look-ahead + true-peak detection)
+pub fn limiter_latency(sample_rate: f32) -> usize {
+    lookahead_samples(sample_rate) + TP_DELAY
+}
+
+/// Same windowed-sinc phases as TruePeakMeter in core/studio/dsp.ts (unity DC gain each)
+fn tp_phases() -> [[f64; TP_TAPS]; TP_OS] {
+    let n = TP_OS * TP_TAPS;
+    let mid = (n - 1) as f64 / 2.0;
+    let h: Vec<f64> = (0..n)
+        .map(|i| {
+            let t = (i as f64 - mid) / TP_OS as f64;
+            let sinc = if t == 0.0 { 1.0 } else { (PI * t).sin() / (PI * t) };
+            sinc * (0.5 - 0.5 * (2.0 * PI * (i as f64 + 0.5) / n as f64).cos())
+        })
+        .collect();
+    let mut out = [[0.0; TP_TAPS]; TP_OS];
+    for (k, ph) in out.iter_mut().enumerate() {
+        for (m, v) in ph.iter_mut().enumerate() {
+            *v = h[k + TP_OS * m];
+        }
+        let sum: f64 = ph.iter().sum();
+        ph.iter_mut().for_each(|v| *v /= sum);
+    }
+    out
+}
+
 pub struct Limiter {
     sample_rate: f32,
     pub latency: usize,
-    delay: Vec<f32>,
-    gains: Vec<f32>,
+    /// Look-ahead window, samples
+    w: usize,
+    delay: [Vec<f32>; MAX_CHANNELS],
     pos: usize,
-    g: f32,
+    phases: [[f64; TP_TAPS]; TP_OS],
+    /// Input history per channel for the true-peak interpolator, stored twice to read it without modulo
+    hist: [[f64; TP_TAPS * 2]; MAX_CHANNELS],
+    h_pos: usize,
+    /// Gain needed now: instant attack, release back towards 1
+    env: f64,
+    /// Minimum of env over the last w + 1 samples: monotonic queue of (value, step), oldest first
+    q_val: Vec<f64>,
+    q_step: Vec<u64>,
+    q_head: usize,
+    q_len: usize,
+    step: u64,
+    /// Last w held minima (moving average)
+    avg: Vec<f64>,
+    avg_pos: usize,
+    sum: f64,
+    amt: Smoother,
     pub block_gr: f32,
 }
 
 impl Limiter {
     pub fn new(sample_rate: f32) -> Self {
-        let n = lookahead_samples(sample_rate);
-        Self { sample_rate, latency: n, delay: vec![0.0; n], gains: vec![1.0; n], pos: 0, g: 1.0, block_gr: 0.0 }
+        let w = lookahead_samples(sample_rate);
+        let latency = w + TP_DELAY;
+        Self {
+            sample_rate,
+            latency,
+            w,
+            delay: [vec![0.0; latency], vec![0.0; latency]],
+            pos: 0,
+            phases: tp_phases(),
+            hist: [[0.0; TP_TAPS * 2]; MAX_CHANNELS],
+            h_pos: 0,
+            env: 1.0,
+            q_val: vec![0.0; w + 2],
+            q_step: vec![0; w + 2],
+            q_head: 0,
+            q_len: 0,
+            step: 0,
+            avg: vec![1.0; w],
+            avg_pos: 0,
+            sum: w as f64,
+            amt: Smoother::new(sample_rate),
+            block_gr: 0.0,
+        }
     }
 
-    pub fn process(&mut self, buf: &mut [f32], p: &LimiterSettings) {
-        let n = self.latency;
-        let ceil = db_to_lin(p.ceiling_db.min(0.0));
-        // Reach the needed gain within the look-ahead window
-        let att = 1.0 - (-4.0 / n as f32).exp();
-        let rel = coef(p.release_ms, self.sample_rate);
-        let mut lowest = 1.0f32;
-        for s in buf.iter_mut() {
-            let x = *s;
-            // The delay always runs, so latency doesn't change when the limiter is switched
-            let out = self.delay[self.pos];
-            self.delay[self.pos] = x;
-            let a = x.abs();
-            self.gains[self.pos] = if a > ceil { ceil / a } else { 1.0 };
-            self.pos = (self.pos + 1) % n;
-            if !p.on {
-                *s = out;
-                continue;
+    /// Linked: the channel that needs the most reduction sets it for all
+    pub fn process(&mut self, bufs: &mut [&mut [f32]], p: &LimiterSettings) {
+        let len = block_len(bufs);
+        let chs = bufs.len().min(MAX_CHANNELS);
+        let w = self.w;
+        let ceil = db_to_lin(p.ceiling_db.min(0.0)) as f64;
+        let rel = coef(p.release_ms, self.sample_rate) as f64;
+        let mut lowest = 1.0f64;
+        let mut out = [0.0f32; MAX_CHANNELS];
+        for i in 0..len {
+            let newest = self.h_pos + TP_TAPS;
+            let mut peak = 0.0f64;
+            for c in 0..chs {
+                let x = bufs[c][i];
+                // The delay always runs, so latency doesn't change when the limiter is switched
+                out[c] = self.delay[c][self.pos];
+                self.delay[c][self.pos] = x;
+                // True peak between the samples that entered 6 and 5 steps ago (4× interpolation, BS.1770)
+                let h = &mut self.hist[c];
+                h[self.h_pos] = x as f64;
+                h[newest] = x as f64;
+                peak = peak.max(h[newest - 6].abs());
+                for ph in self.phases.iter() {
+                    let mut acc = 0.0;
+                    for (m, v) in ph.iter().enumerate() {
+                        acc += v * h[newest - m];
+                    }
+                    peak = peak.max(acc.abs());
+                }
             }
-            let need = self.gains.iter().fold(1.0f32, |m, &g| m.min(g));
-            self.g += (need - self.g) * if need < self.g { att } else { rel };
-            // Safety: nothing ever leaves above the ceiling
-            *s = (out * self.g).clamp(-ceil, ceil);
-            lowest = lowest.min(self.g);
+            self.pos = (self.pos + 1) % self.latency;
+            self.h_pos = (self.h_pos + 1) % TP_TAPS;
+            let need = if peak > ceil { ceil / peak } else { 1.0 };
+            let released = self.env + (1.0 - self.env) * rel;
+            self.env = need.min(released);
+            // Hold the lowest gain over the window, then average it over the window: the gain glides
+            // down (no step, no distortion) and is fully down exactly when the peak comes out
+            let m = self.hold_min(self.env, w as u64 + 1);
+            self.sum += m - self.avg[self.avg_pos];
+            self.avg[self.avg_pos] = m;
+            self.avg_pos = (self.avg_pos + 1) % w;
+            let g = self.sum / w as f64;
+            let k = (1.0 + (g - 1.0) * self.amt.next(if p.on { 1.0 } else { 0.0 }) as f64) as f32;
+            let c32 = ceil as f32;
+            for c in 0..chs {
+                let mut y = out[c] * k;
+                if p.on {
+                    // Safety net for rounding: never engages on a signal the gain already handled
+                    y = y.clamp(-c32, c32);
+                }
+                bufs[c][i] = y;
+            }
+            if p.on {
+                lowest = lowest.min(g);
+            }
         }
-        self.block_gr = if p.on { lin_to_db(lowest) } else { 0.0 };
-        if !p.on {
-            self.g = 1.0;
+        // Re-add the window so the running sum never drifts
+        self.sum = self.avg.iter().sum();
+        self.block_gr = if p.on { lin_to_db(lowest as f32) } else { 0.0 };
+    }
+
+    /// Pushes v and returns the minimum of the last `span` values (≥ 1 when fewer were pushed)
+    fn hold_min(&mut self, v: f64, span: u64) -> f64 {
+        let cap = self.q_val.len();
+        // Values at the back that are not lower than v can never be the minimum again
+        while self.q_len > 0 && self.q_val[(self.q_head + self.q_len - 1) % cap] >= v {
+            self.q_len -= 1;
         }
+        let at = (self.q_head + self.q_len) % cap;
+        self.q_val[at] = v;
+        self.q_step[at] = self.step;
+        self.q_len += 1;
+        if self.q_step[self.q_head] + span <= self.step {
+            self.q_head = (self.q_head + 1) % cap;
+            self.q_len -= 1;
+        }
+        self.step += 1;
+        self.q_val[self.q_head].min(1.0)
     }
 }
 
@@ -593,7 +975,9 @@ pub struct NoiseSuppressor {
     im: Vec<f64>,
     smooth: Vec<f64>,
     tracked: Vec<f64>,
-    learned: Option<Vec<f64>>,
+    /// Learned profile (bins); valid when has_learned
+    learned: Vec<f64>,
+    has_learned: bool,
     prev_clean: Vec<f64>,
     gains: Vec<f64>,
     power: Vec<f64>,
@@ -602,8 +986,9 @@ pub struct NoiseSuppressor {
     learn_frames: usize,
     frames: usize,
     pub reduction_db: f32,
-    /// Set when a learning run finishes; take it to store the profile
-    pub learned_profile: Option<Vec<f32>>,
+    /// Filled when a learning run finishes (preallocated: nothing allocates on the audio thread)
+    learned_out: Vec<f32>,
+    learned_ready: bool,
 }
 
 impl NoiseSuppressor {
@@ -625,7 +1010,8 @@ impl NoiseSuppressor {
             im: vec![0.0; n],
             smooth: vec![0.0; bins],
             tracked: vec![0.0; bins],
-            learned: None,
+            learned: vec![0.0; bins],
+            has_learned: false,
             prev_clean: vec![0.0; bins],
             gains: vec![1.0; bins],
             power: vec![0.0; bins],
@@ -634,7 +1020,8 @@ impl NoiseSuppressor {
             learn_frames: 0,
             frames: 0,
             reduction_db: 0.0,
-            learned_profile: None,
+            learned_out: vec![0.0; bins],
+            learned_ready: false,
         }
     }
 
@@ -647,11 +1034,26 @@ impl NoiseSuppressor {
     }
 
     pub fn set_profile(&mut self, profile: Option<Vec<f64>>) {
-        self.learned = profile.filter(|p| p.len() == self.bins);
+        match profile {
+            Some(p) if p.len() == self.bins => {
+                self.learned.copy_from_slice(&p);
+                self.has_learned = true;
+            }
+            _ => self.has_learned = false,
+        }
     }
 
     pub fn has_profile(&self) -> bool {
-        self.learned.is_some()
+        self.has_learned
+    }
+
+    /// The profile of a finished learning run, once (allocates: call it inside permit_alloc)
+    pub fn take_learned(&mut self) -> Option<Vec<f32>> {
+        if !self.learned_ready {
+            return None;
+        }
+        self.learned_ready = false;
+        Some(self.learned_out.clone())
     }
 
     /// Starts capturing the noise profile for `seconds` (stay silent meanwhile)
@@ -715,9 +1117,12 @@ impl NoiseSuppressor {
             self.learn_left -= 1;
             if self.learn_left == 0 {
                 let frames = self.learn_frames as f64;
-                let prof: Vec<f64> = self.learn_sum.iter().map(|v| v / frames).collect();
-                self.learned_profile = Some(prof.iter().map(|&v| v as f32).collect());
-                self.learned = Some(prof);
+                for k in 0..bins {
+                    self.learned[k] = self.learn_sum[k] / frames;
+                    self.learned_out[k] = self.learned[k] as f32;
+                }
+                self.has_learned = true;
+                self.learned_ready = true;
             }
         }
 
@@ -726,13 +1131,10 @@ impl NoiseSuppressor {
         // Decision-directed weight: 0.9 (responsive) … 0.995 (very smooth)
         let alpha = 0.9 + (p.smoothing.clamp(0.0, 100.0) as f64 / 100.0) * 0.095;
         let from_bin = ((p.from_hz.max(0.0) / self.sample_rate) * n as f32).floor() as usize;
-        let use_learned = p.mode == NoiseMode::Learned && self.learned.is_some();
+        let use_learned = p.mode == NoiseMode::Learned && self.has_learned;
         for k in 0..bins {
             // The tracked minimum sits below the mean noise power: ×2 compensates its bias
-            let base = match (&self.learned, use_learned) {
-                (Some(l), true) => l[k],
-                _ => self.tracked[k] * 2.0,
-            };
+            let base = if use_learned { self.learned[k] } else { self.tracked[k] * 2.0 };
             let nz = base * over + 1e-20;
             let mut g = 1.0;
             if p.on && k >= from_bin {
@@ -939,25 +1341,86 @@ struct BiquadState {
     z2: f64,
 }
 
+/// Samples between coefficient updates while a band glides
+const EQ_STEP: usize = 32;
+
+fn glide(c: f32, t: f32, k: f32) -> f32 {
+    let v = c + (t - c) * k;
+    if (t - v).abs() < 1e-3 {
+        t
+    } else {
+        v
+    }
+}
+
+/// Glide on a log scale (frequency, Q), so an octave takes as long anywhere
+fn glide_log(c: f32, t: f32, k: f32) -> f32 {
+    if c <= 0.0 || t <= 0.0 {
+        return t;
+    }
+    let v = c * (t / c).powf(k);
+    if (v / t - 1.0).abs() < 1e-4 {
+        t
+    } else {
+        v
+    }
+}
+
 pub struct Eq {
     sample_rate: f32,
-    cached: Option<([BandSettings; MAX_BANDS], bool)>,
+    /// Settings the filters glide towards, and the ones in use now
+    target: Option<([BandSettings; MAX_BANDS], bool)>,
+    cur: [BandSettings; MAX_BANDS],
     coefs: [[Coefs; STAGES_PER_BAND]; MAX_BANDS],
     state: [[BiquadState; STAGES_PER_BAND]; MAX_BANDS],
 }
 
 impl Eq {
     pub fn new(sample_rate: f32) -> Self {
-        Self { sample_rate, cached: None, coefs: [[IDENTITY; STAGES_PER_BAND]; MAX_BANDS], state: [[BiquadState::default(); STAGES_PER_BAND]; MAX_BANDS] }
+        let flat = BandSettings { on: false, kind: BandType::Peaking, freq: 1000.0, gain_db: 0.0, q: 1.0, slope: 12 };
+        Self { sample_rate, target: None, cur: [flat; MAX_BANDS], coefs: [[IDENTITY; STAGES_PER_BAND]; MAX_BANDS], state: [[BiquadState::default(); STAGES_PER_BAND]; MAX_BANDS] }
     }
 
+    /// Frequency, gain and Q glide (automation and knob moves don't click); type, slope and
+    /// on/off switch at once
     pub fn process(&mut self, buf: &mut [f32], bands: &[BandSettings; MAX_BANDS], on: bool) {
-        if self.cached != Some((*bands, on)) {
-            self.cached = Some((*bands, on));
-            for (i, b) in bands.iter().enumerate() {
-                self.coefs[i] = band_stages(b, on, self.sample_rate);
+        match self.target {
+            Some((t, o)) if t == *bands && o == on => {}
+            Some((t, o)) => {
+                let structural = o != on || t.iter().zip(bands.iter()).any(|(a, b)| a.on != b.on || a.kind != b.kind || a.slope != b.slope);
+                self.target = Some((*bands, on));
+                if structural {
+                    self.cur = *bands;
+                    self.update(on);
+                }
+            }
+            None => {
+                self.target = Some((*bands, on));
+                self.cur = *bands;
+                self.update(on);
             }
         }
+        let k = 1.0 - (1.0 - coef(20.0, self.sample_rate)).powi(EQ_STEP as i32);
+        for chunk in buf.chunks_mut(EQ_STEP) {
+            if self.cur != *bands {
+                for (c, t) in self.cur.iter_mut().zip(bands.iter()) {
+                    c.freq = glide_log(c.freq, t.freq, k);
+                    c.q = glide_log(c.q, t.q, k);
+                    c.gain_db = glide(c.gain_db, t.gain_db, k);
+                }
+                self.update(on);
+            }
+            self.run(chunk);
+        }
+    }
+
+    fn update(&mut self, on: bool) {
+        for (i, b) in self.cur.iter().enumerate() {
+            self.coefs[i] = band_stages(b, on, self.sample_rate);
+        }
+    }
+
+    fn run(&mut self, buf: &mut [f32]) {
         for (bi, stages) in self.coefs.iter().enumerate() {
             for (si, c) in stages.iter().enumerate() {
                 if *c == IDENTITY {
@@ -973,12 +1436,18 @@ impl Eq {
                     st.z2 = c.b2 * x - c.a2 * y;
                     *s = y as f32;
                 }
+                if st.z1.abs() < DENORMAL as f64 {
+                    st.z1 = 0.0;
+                }
+                if st.z2.abs() < DENORMAL as f64 {
+                    st.z2 = 0.0;
+                }
             }
         }
     }
 }
 
-// ---- The whole chain for one channel
+// ---- The whole chain
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct ChainSettings {
@@ -1009,61 +1478,87 @@ pub struct ChainReport {
 }
 
 pub struct Chain {
-    pub noise: NoiseSuppressor,
+    pub noise: Vec<NoiseSuppressor>,
     gate: Gate,
-    eq: Eq,
+    eq: Vec<Eq>,
     deesser: DeEsser,
     comp1: Compressor,
     comp2: Compressor,
-    sat: Saturator,
+    sat: Vec<Saturator>,
     limiter: Limiter,
+    in_gain: Smoother,
+    out_gain: Smoother,
 }
 
 impl Chain {
-    pub fn new(sample_rate: f32) -> Self {
+    /// `channels` (1 or 2): noise reduction, EQ and saturation run per channel, the dynamics linked
+    pub fn new(sample_rate: f32, channels: usize) -> Self {
+        let n = channels.clamp(1, MAX_CHANNELS);
         Self {
-            noise: NoiseSuppressor::new(sample_rate),
+            noise: (0..n).map(|_| NoiseSuppressor::new(sample_rate)).collect(),
             gate: Gate::new(sample_rate),
-            eq: Eq::new(sample_rate),
+            eq: (0..n).map(|_| Eq::new(sample_rate)).collect(),
             deesser: DeEsser::new(sample_rate),
             comp1: Compressor::new(sample_rate),
             comp2: Compressor::new(sample_rate),
-            sat: Saturator::new(sample_rate),
+            sat: (0..n).map(|_| Saturator::new(sample_rate)).collect(),
             limiter: Limiter::new(sample_rate),
+            in_gain: Smoother::new(sample_rate),
+            out_gain: Smoother::new(sample_rate),
         }
     }
 
-    /// Total latency in samples: noise reduction frame + limiter look-ahead (always, on or off)
+    /// Total latency in samples: noise reduction frame + saturator oversampling + limiter look-ahead
+    /// (always, on or off)
     pub fn latency(&self) -> usize {
-        self.noise.latency() + self.limiter.latency
+        self.noise[0].latency() + SAT_LATENCY + self.limiter.latency
     }
 
     /// Same order as the app: gain/phase → noise → gate → EQ (pre) → de-esser → comp 1 → comp 2
     /// → saturation → EQ (post) → limiter → output gain
-    pub fn process(&mut self, buf: &mut [f32], s: &ChainSettings) -> ChainReport {
+    pub fn process(&mut self, bufs: &mut [&mut [f32]], s: &ChainSettings) -> ChainReport {
+        let n = bufs.len().min(self.noise.len());
+        let bufs = &mut bufs[..n];
+        let len = block_len(bufs);
+        // Gains glide too; a phase flip passes through zero instead of jumping
         let g_in = db_to_lin(s.input_gain_db) * if s.phase_invert { -1.0 } else { 1.0 };
-        if g_in != 1.0 {
-            buf.iter_mut().for_each(|x| *x *= g_in);
+        for i in 0..len {
+            let g = self.in_gain.next(g_in);
+            if g != 1.0 {
+                bufs.iter_mut().for_each(|b| b[i] *= g);
+            }
         }
-        self.noise.process(buf, &s.noise);
-        self.gate.process(buf, &s.gate);
+        for (c, b) in bufs.iter_mut().enumerate() {
+            self.noise[c].process(b, &s.noise);
+        }
+        self.gate.process(bufs, &s.gate);
         if !s.eq_post {
-            self.eq.process(buf, &s.bands, s.eq_on);
+            for (c, b) in bufs.iter_mut().enumerate() {
+                self.eq[c].process(b, &s.bands, s.eq_on);
+            }
         }
-        self.deesser.process(buf, &s.deesser);
-        self.comp1.process(buf, &s.comp1);
-        self.comp2.process(buf, &s.comp2);
-        self.sat.process(buf, &s.saturation);
+        self.deesser.process(bufs, &s.deesser);
+        self.comp1.process(bufs, &s.comp1);
+        self.comp2.process(bufs, &s.comp2);
+        for (c, b) in bufs.iter_mut().enumerate() {
+            self.sat[c].process(b, &s.saturation);
+        }
         if s.eq_post {
-            self.eq.process(buf, &s.bands, s.eq_on);
+            for (c, b) in bufs.iter_mut().enumerate() {
+                self.eq[c].process(b, &s.bands, s.eq_on);
+            }
         }
-        self.limiter.process(buf, &s.limiter);
+        self.limiter.process(bufs, &s.limiter);
         let g_out = db_to_lin(s.output_gain_db);
-        if g_out != 1.0 {
-            buf.iter_mut().for_each(|x| *x *= g_out);
+        for i in 0..len {
+            let g = self.out_gain.next(g_out);
+            if g != 1.0 {
+                bufs.iter_mut().for_each(|b| b[i] *= g);
+            }
         }
+        let noise_db = self.noise[..n].iter().fold(0.0f32, |m, ns| m.min(ns.reduction_db));
         ChainReport {
-            noise_db: if s.noise.on { self.noise.reduction_db } else { 0.0 },
+            noise_db: if s.noise.on { noise_db } else { 0.0 },
             gate_db: self.gate.block_gain_db,
             deess_gr: self.deesser.block_gr,
             comp1_gr: self.comp1.block_gr,

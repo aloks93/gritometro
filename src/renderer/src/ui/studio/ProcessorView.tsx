@@ -1529,9 +1529,9 @@ function LimiterModule({ cfg, set }: { cfg: ProcessorConfig; set: SetFn }): JSX.
       live={<GrBadge pick={(x) => x.limGr} />}
       graph={<TransferGraph curve={(x) => Math.min(x, l.on ? l.ceilingDb : 0)} live={lv && l.on ? lv.outPeak : null} thr={l.ceilingDb} range={[-30, 0]} />}
     >
-      <Knob label="Techo" value={l.ceilingDb} min={-12} max={0} step={0.1} unit="dBFS" def={-1} onChange={(ceilingDb) => p({ ceilingDb })} />
+      <Knob label="Techo" value={l.ceilingDb} min={-12} max={0} step={0.1} unit="dBTP" def={-1} onChange={(ceilingDb) => p({ ceilingDb })} />
       <Knob label="Liberación" value={l.releaseMs} min={10} max={1000} step={5} unit="ms" log def={60} onChange={(releaseMs) => p({ releaseMs })} />
-      <p className="vp-note">Ninguna muestra pasa del techo: protege a VoiceMeeter, al stream y a los oídos de un grito o un golpe al micro.</p>
+      <p className="vp-note">Ni los picos entre muestras (true peak) pasan del techo, y sin recortar la onda: protege a VoiceMeeter, al stream y a los oídos de un grito o un golpe al micro.</p>
     </Module>
   )
 }

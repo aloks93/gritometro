@@ -2,7 +2,7 @@
 // + processor.css): rack header with presets, vertical meters, signal flow with live reduction,
 // big parametric EQ with live spectrum and draggable bands, band strip and module cards with knobs.
 
-use crate::dsp::{band_stages, fft, lookahead_samples, response_db, Coefs, NOISE_FFT};
+use crate::dsp::{band_stages, fft, limiter_latency, response_db, Coefs, NOISE_FFT, SAT_LATENCY};
 use crate::params::*;
 use crate::presets::{apply_chain, bundle, chain_of, parse_preset_file, serialize_preset_file, ChainJson};
 use crate::{Shared, LEARN_SECONDS, SCOPE_SIZE};
@@ -184,7 +184,7 @@ fn mono(text: String, color: Color32) -> egui::RichText {
 }
 
 fn latency_ms(sr: f32) -> f32 {
-    (NOISE_FFT + lookahead_samples(sr)) as f32 / sr * 1000.0
+    (NOISE_FFT + SAT_LATENCY + limiter_latency(sr)) as f32 / sr * 1000.0
 }
 
 // ---- Knob, switch, LED, segmented
@@ -1010,7 +1010,7 @@ fn modules(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, sh: &Shared,
                 knob(ui, setter, &l.ceiling, "Techo", C_LIM, k, false);
                 knob(ui, setter, &l.release, "Liberación", C_LIM, k, false);
             });
-            ui.label(small("Ninguna muestra pasa del techo: protege la mezcla y los oídos de un grito o un golpe al micro."));
+            ui.label(small("Ni los picos entre muestras (true peak) pasan del techo, y sin recortar la onda: protege la mezcla y los oídos de un grito o un golpe al micro."));
             ui.add_space(4.0);
             ui.label(small(&format!("Latencia fija de {:.1} ms: el DAW la compensa solo.", latency_ms(sh.sample_rate.load(Ordering::Relaxed)))));
         });

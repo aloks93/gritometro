@@ -1,8 +1,9 @@
-import { compressorCurve } from '../studio/dsp'
+import { compressorCurve, OVERSAMPLE, POLYPHASE, TAPS_PER_PHASE } from '../studio/dsp'
 
 // Sample-by-sample dynamics for the mic processor: gate/expander, de-esser, compressor,
 // saturation and look-ahead limiter. Pure TS so the same code runs in the AudioWorklet and in
 // the tests. Every class processes a mono block in place and keeps its own state between blocks.
+// Knob moves and on/off switches glide (Smoother), so nothing clicks while adjusting live.
 
 export const dbToLin = (db: number): number => Math.pow(10, db / 20)
 export const linToDb = (g: number): number => (g > 1e-9 ? 20 * Math.log10(g) : -180)
@@ -10,6 +11,37 @@ export const linToDb = (g: number): number => (g > 1e-9 ? 20 * Math.log10(g) : -
 /** One-pole smoothing coefficient for a time constant in ms */
 export function coef(ms: number, sampleRate: number): number {
   return 1 - Math.exp(-1 / (Math.max(0.01, ms) / 1000 * sampleRate))
+}
+
+/** Values this small are set to 0: denormals make the CPU crawl after a few seconds of silence */
+export const DENORMAL = 1e-25
+
+/**
+ * One-pole parameter glide (~20 ms). It starts at the first target, so a fresh processor
+ * sounds exactly like the static settings, and snaps once it is close enough.
+ */
+export class Smoother {
+  v = NaN
+  private k: number
+
+  constructor(sampleRate: number, ms = 20) {
+    this.k = coef(ms, sampleRate)
+  }
+
+  next(target: number): number {
+    if (this.v !== this.v) this.v = target
+    else if (this.v !== target) {
+      this.v += (target - this.v) * this.k
+      if (Math.abs(target - this.v) < 1e-5) this.v = target
+    }
+    return this.v
+  }
+
+  /** Resting at `target` (a smoother that never ran starts there) */
+  settled(target: number): boolean {
+    if (this.v !== this.v) this.v = target
+    return this.v === target
+  }
 }
 
 /** Second-order section (RBJ cookbook) with its own state, for detector/sidechain filters */
@@ -55,6 +87,12 @@ export class Section {
     this.z2 = this.b2 * x - this.a2 * y
     return y
   }
+
+  /** Clears denormal state; call once per block */
+  flush(): void {
+    if (Math.abs(this.z1) < DENORMAL) this.z1 = 0
+    if (Math.abs(this.z2) < DENORMAL) this.z2 = 0
+  }
 }
 
 // ---- Gate / expander
@@ -85,6 +123,7 @@ export class Gate {
   private hpf: Section
   private lpf: Section
   private key = ''
+  private amt: Smoother
   open = true
   /** Lowest gain applied in the last block, dB */
   blockGainDb = 0
@@ -94,6 +133,7 @@ export class Gate {
   constructor(private sampleRate: number, private p: GateParams) {
     this.hpf = new Section(sampleRate)
     this.lpf = new Section(sampleRate)
+    this.amt = new Smoother(sampleRate)
     this.set(p)
   }
 
@@ -112,7 +152,7 @@ export class Gate {
     // Peak envelope: instant rise, ~10 ms fall
     const envDecay = Math.exp(-1 / (0.01 * sr))
     let level = 0
-    if (!p.on) {
+    if (!p.on && this.amt.settled(0)) {
       for (let i = 0; i < buf.length; i++) {
         const a = Math.abs(this.lpf.process(this.hpf.process(buf[i])))
         this.env = a > this.env ? a : this.env * envDecay
@@ -122,6 +162,7 @@ export class Gate {
       this.gainDb = 0
       this.blockGainDb = 0
       this.blockLevelDb = linToDb(level)
+      this.flush()
       return
     }
     const openLin = dbToLin(p.thresholdDb)
@@ -161,11 +202,20 @@ export class Gate {
         target = this.open ? 0 : range
       }
       this.gainDb += (target - this.gainDb) * (target > this.gainDb ? att : rel)
-      if (this.gainDb < lowest) lowest = this.gainDb
-      buf[i] *= dbToLin(this.gainDb)
+      // Switching the gate on/off fades its action in/out instead of jumping
+      const g = this.gainDb * this.amt.next(p.on ? 1 : 0)
+      if (g < lowest) lowest = g
+      buf[i] *= dbToLin(g)
     }
     this.blockGainDb = lowest
     this.blockLevelDb = linToDb(level)
+    this.flush()
+  }
+
+  private flush(): void {
+    this.hpf.flush()
+    this.lpf.flush()
+    if (this.env < DENORMAL) this.env = 0
   }
 }
 
@@ -200,6 +250,9 @@ export class Compressor {
   private ms = 0
   private sc: Section
   private scHz = -1
+  private amt: Smoother
+  private makeupSm: Smoother
+  private wetSm: Smoother
   /** Deepest gain reduction in the last block, dB (≤ 0) */
   blockGr = 0
   /** Highest detector level in the last block, dB */
@@ -207,6 +260,9 @@ export class Compressor {
 
   constructor(private sampleRate: number, private p: CompParams) {
     this.sc = new Section(sampleRate)
+    this.amt = new Smoother(sampleRate)
+    this.makeupSm = new Smoother(sampleRate)
+    this.wetSm = new Smoother(sampleRate)
     this.set(p)
   }
 
@@ -227,6 +283,8 @@ export class Compressor {
     const knee = Math.max(0, p.kneeDb)
     const wet = Math.max(0, Math.min(100, p.mix)) / 100
     const makeup = dbToLin(p.makeupDb + (p.autoMakeup ? autoMakeupDb(p) : 0))
+    // Fully off (and done fading out): only the detector runs, for the meters
+    const off = !p.on && this.amt.settled(0)
     let lowest = 0
     let level = -100
     for (let i = 0; i < buf.length; i++) {
@@ -241,17 +299,19 @@ export class Compressor {
         levelDb = linToDb(Math.abs(d))
       }
       if (levelDb > level) level = levelDb
-      if (!p.on) continue
+      if (off) continue
       const target = compressorCurve(levelDb, p.thresholdDb, ratio, knee) - levelDb
       // More reduction = attack, less = release
       this.grDb += (target - this.grDb) * (target < this.grDb ? att : rel)
       if (this.grDb < lowest) lowest = this.grDb
-      const y = x * dbToLin(this.grDb) * makeup
-      buf[i] = wet >= 1 ? y : x * (1 - wet) + y * wet
+      const y = x * dbToLin(this.grDb) * this.makeupSm.next(makeup)
+      buf[i] = x + (y - x) * (this.wetSm.next(wet) * this.amt.next(p.on ? 1 : 0))
     }
     this.blockLevelDb = level
-    if (!p.on) this.grDb = 0
-    this.blockGr = lowest
+    if (off) this.grDb = 0
+    this.blockGr = p.on ? lowest : 0
+    this.sc.flush()
+    if (this.ms < DENORMAL) this.ms = 0
   }
 }
 
@@ -280,11 +340,13 @@ export class DeEsser {
   private env = 0
   private grDb = 0
   private key = ''
+  private amt: Smoother
   blockGr = 0
 
   constructor(private sampleRate: number, private p: DeEsserParams) {
     this.bp = new Section(sampleRate)
     this.lp = new Section(sampleRate)
+    this.amt = new Smoother(sampleRate)
     this.set(p)
   }
 
@@ -301,7 +363,7 @@ export class DeEsser {
 
   process(buf: Float32Array): void {
     const p = this.p
-    if (!p.on) {
+    if (!p.on && this.amt.settled(0)) {
       this.grDb = 0
       this.blockGr = 0
       return
@@ -320,14 +382,18 @@ export class DeEsser {
       const over = linToDb(this.env) - p.thresholdDb
       const target = over > 0 ? Math.max(range, -over * slope) : 0
       this.grDb += (target - this.grDb) * (target < this.grDb ? att : rel)
-      if (this.grDb < lowest) lowest = this.grDb
-      const g = dbToLin(this.grDb)
+      const gDb = this.grDb * this.amt.next(p.on ? 1 : 0)
+      if (gDb < lowest) lowest = gDb
+      const g = dbToLin(gDb)
       const low = this.lp.process(x)
       if (p.listen) buf[i] = s
       else if (p.mode === 'wide') buf[i] = x * g
       else buf[i] = low + (x - low) * g
     }
     this.blockGr = lowest
+    this.bp.flush()
+    this.lp.flush()
+    if (this.env < DENORMAL) this.env = 0
   }
 }
 
@@ -365,14 +431,76 @@ function ampClip(u: number): number {
   return (lim * v) / Math.pow(1 + Math.pow(Math.abs(v), 4), 0.25)
 }
 
+/** The curve runs at this many times the sample rate, so its harmonics don't fold back (aliasing) */
+const SAT_OS = 4
+const SAT_TAPS = 129
+/** Delay of the oversampling filters (up + down), samples; the dry path waits as long */
+export const SAT_LATENCY = (SAT_TAPS - 1) / SAT_OS
+
+function besselI0(x: number): number {
+  let sum = 1
+  let term = 1
+  for (let k = 1; k < 50; k++) {
+    term *= (x / (2 * k)) ** 2
+    sum += term
+    if (term < 1e-12 * sum) break
+  }
+  return sum
+}
+
+/** Linear-phase low-pass at the oversampled rate (Kaiser-windowed sinc, cut at 0.45 × the base rate), unity DC gain */
+export const SAT_FIR: Float64Array = (() => {
+  const h = new Float64Array(SAT_TAPS)
+  const mid = (SAT_TAPS - 1) / 2
+  const fc = 0.45 / SAT_OS
+  const beta = 8
+  let sum = 0
+  for (let i = 0; i < SAT_TAPS; i++) {
+    const t = i - mid
+    const sinc = t === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * t) / (Math.PI * t)
+    h[i] = (sinc * besselI0(beta * Math.sqrt(1 - (t / mid) ** 2))) / besselI0(beta)
+    sum += h[i]
+  }
+  for (let i = 0; i < SAT_TAPS; i++) h[i] /= sum
+  return h
+})()
+
+const SAT_PHASE_TAPS = Math.ceil(SAT_TAPS / SAT_OS)
+
+/** Interpolator phases: output k of each input sample = SAT_OS · Σ h[k + SAT_OS·m] · x[t − m] */
+const SAT_PHASES: Float64Array[] = Array.from({ length: SAT_OS }, (_, k) => {
+  const ph = new Float64Array(SAT_PHASE_TAPS)
+  for (let m = 0; m < SAT_PHASE_TAPS; m++) {
+    const i = k + SAT_OS * m
+    ph[m] = i < SAT_TAPS ? SAT_FIR[i] * SAT_OS : 0
+  }
+  return ph
+})
+
+const SAT_IN_MASK = 63
+const SAT_OS_MASK = 255
+
 export class Saturator {
   private tone: Section
   private toneHz = -1
   private dc = 0
   private dcIn = 0
+  private amt: Smoother
+  private driveSm: Smoother
+  private wetSm: Smoother
+  /** Dry path, delayed like the oversampled one */
+  private dry = new Float64Array(SAT_LATENCY)
+  private dryPos = 0
+  private xh = new Float64Array(SAT_IN_MASK + 1)
+  private xPos = 0
+  private os = new Float64Array(SAT_OS_MASK + 1)
+  private osPos = 0
 
   constructor(private sampleRate: number, private p: SaturationParams) {
     this.tone = new Section(sampleRate)
+    this.amt = new Smoother(sampleRate)
+    this.driveSm = new Smoother(sampleRate)
+    this.wetSm = new Smoother(sampleRate)
     this.set(p)
   }
 
@@ -386,50 +514,111 @@ export class Saturator {
 
   process(buf: Float32Array): void {
     const p = this.p
-    if (!p.on) return
+    // The delay always runs, so latency doesn't change when the saturator is switched
+    const off = !p.on && this.amt.settled(0)
     const drive = dbToLin(Math.max(0, p.driveDb))
     const wet = Math.max(0, Math.min(100, p.mix)) / 100
     // DC blocker after the asymmetric curve (~5 Hz)
     const r = 1 - (2 * Math.PI * 5) / this.sampleRate
     for (let i = 0; i < buf.length; i++) {
       const x = buf[i]
-      let s = saturate(x, drive, p.mode)
-      const y = s - this.dcIn + r * this.dc
-      this.dcIn = s
+      const d = this.dry[this.dryPos]
+      this.dry[this.dryPos] = x
+      this.dryPos = (this.dryPos + 1) % SAT_LATENCY
+      this.xh[this.xPos] = x
+      if (off) {
+        this.xPos = (this.xPos + 1) & SAT_IN_MASK
+        buf[i] = d
+        continue
+      }
+      // Up 4×, saturate, back down: the harmonics above the base Nyquist are filtered out
+      const dr = this.driveSm.next(drive)
+      for (let k = 0; k < SAT_OS; k++) {
+        const ph = SAT_PHASES[k]
+        let acc = 0
+        for (let m = 0; m < SAT_PHASE_TAPS; m++) acc += ph[m] * this.xh[(this.xPos - m) & SAT_IN_MASK]
+        this.os[(this.osPos + k) & SAT_OS_MASK] = saturate(acc, dr, p.mode)
+      }
+      // Symmetric filter: pair the taps that share a coefficient
+      const half = (SAT_TAPS - 1) / 2
+      let sat = SAT_FIR[half] * this.os[(this.osPos - half) & SAT_OS_MASK]
+      for (let j = 0; j < half; j++) sat += SAT_FIR[j] * (this.os[(this.osPos - j) & SAT_OS_MASK] + this.os[(this.osPos - (SAT_TAPS - 1 - j)) & SAT_OS_MASK])
+      this.osPos = (this.osPos + SAT_OS) & SAT_OS_MASK
+      this.xPos = (this.xPos + 1) & SAT_IN_MASK
+      const y = sat - this.dcIn + r * this.dc
+      this.dcIn = sat
       this.dc = y
-      s = this.tone.process(y)
-      buf[i] = x * (1 - wet) + s * wet
+      const s = this.tone.process(y)
+      buf[i] = d + (s - d) * (this.wetSm.next(wet) * this.amt.next(p.on ? 1 : 0))
     }
+    this.tone.flush()
+    if (Math.abs(this.dc) < DENORMAL) this.dc = 0
+    if (Math.abs(this.dcIn) < DENORMAL) this.dcIn = 0
   }
 }
 
-// ---- Look-ahead limiter
+// ---- Look-ahead true-peak limiter
 
 export interface LimiterParams {
   on: boolean
+  /** True-peak ceiling: inter-sample peaks (what a DAC or an encoder reconstructs) stay below it */
   ceilingDb: number
   releaseMs: number
 }
 
-/** Look-ahead time: the limiter (and the dry path, for a clean bypass) is delayed by this much */
+/** Look-ahead time: the gain is fully down by the time a peak comes out */
 export const LOOKAHEAD_MS = 1.5
 
 export function lookaheadSamples(sampleRate: number): number {
   return Math.max(1, Math.round((LOOKAHEAD_MS / 1000) * sampleRate))
 }
 
+/** The true-peak interpolator reports a peak this many samples after it entered */
+const TP_DELAY = 5
+
+/** Total delay of the limiter (look-ahead + true-peak detection); the dry path waits as long */
+export function limiterLatency(sampleRate: number): number {
+  return lookaheadSamples(sampleRate) + TP_DELAY
+}
+
+/** Delay of the whole dynamics section (saturator oversampling + limiter), samples */
+export function dynamicsLatency(sampleRate: number): number {
+  return SAT_LATENCY + limiterLatency(sampleRate)
+}
+
 export class Limiter {
   readonly latency: number
+  /** Look-ahead window, samples */
+  private w: number
   private delay: Float32Array
-  private gains: Float32Array
   private pos = 0
-  private g = 1
+  /** Input history for the true-peak interpolator, stored twice to read it without modulo */
+  private hist = new Float64Array(TAPS_PER_PHASE * 2)
+  private hPos = 0
+  /** Gain needed now: instant attack, release back towards 1 */
+  private env = 1
+  /** Minimum of env over the last w + 1 samples: monotonic queue of (value, step), oldest first */
+  private qVal: Float64Array
+  private qStep: Float64Array
+  private qHead = 0
+  private qLen = 0
+  private step = 0
+  /** Last w held minima (moving average) */
+  private avg: Float64Array
+  private avgPos = 0
+  private sum: number
+  private amt: Smoother
   blockGr = 0
 
   constructor(private sampleRate: number, private p: LimiterParams) {
-    this.latency = lookaheadSamples(sampleRate)
+    this.w = lookaheadSamples(sampleRate)
+    this.latency = this.w + TP_DELAY
     this.delay = new Float32Array(this.latency)
-    this.gains = new Float32Array(this.latency).fill(1)
+    this.qVal = new Float64Array(this.w + 2)
+    this.qStep = new Float64Array(this.w + 2)
+    this.avg = new Float64Array(this.w).fill(1)
+    this.sum = this.w
+    this.amt = new Smoother(sampleRate)
   }
 
   set(p: LimiterParams): void {
@@ -438,35 +627,73 @@ export class Limiter {
 
   process(buf: Float32Array): void {
     const p = this.p
-    const n = this.latency
+    const w = this.w
     const ceil = dbToLin(Math.min(0, p.ceilingDb))
-    // Reach the needed gain within the look-ahead window
-    const att = 1 - Math.exp(-4 / n)
     const rel = coef(p.releaseMs, this.sampleRate)
+    // Locals for the hot loop (module bindings are slower to read per sample)
+    const hist = this.hist
+    const phases = POLYPHASE
+    const taps = TAPS_PER_PHASE
     let lowest = 1
     for (let i = 0; i < buf.length; i++) {
       const x = buf[i]
       // The delay always runs, so latency doesn't change when the limiter is switched
       const out = this.delay[this.pos]
       this.delay[this.pos] = x
-      const a = Math.abs(x)
-      this.gains[this.pos] = a > ceil ? ceil / a : 1
-      this.pos = (this.pos + 1) % n
-      if (!p.on) {
-        buf[i] = out
-        continue
+      this.pos = (this.pos + 1) % this.latency
+      // True peak between the samples that entered 6 and 5 steps ago (4× interpolation, BS.1770)
+      hist[this.hPos] = x
+      hist[this.hPos + taps] = x
+      const newest = this.hPos + taps
+      let peak = Math.abs(hist[newest - 6])
+      for (let k = 0; k < OVERSAMPLE; k++) {
+        const ph = phases[k]
+        let acc = 0
+        for (let m = 0; m < taps; m++) acc += ph[m] * hist[newest - m]
+        const a = Math.abs(acc)
+        if (a > peak) peak = a
       }
-      let need = 1
-      for (let k = 0; k < n; k++) if (this.gains[k] < need) need = this.gains[k]
-      this.g += (need - this.g) * (need < this.g ? att : rel)
-      let y = out * this.g
-      // Safety: nothing ever leaves above the ceiling
-      if (y > ceil) y = ceil
-      else if (y < -ceil) y = -ceil
+      this.hPos = (this.hPos + 1) % taps
+      const need = peak > ceil ? ceil / peak : 1
+      const released = this.env + (1 - this.env) * rel
+      this.env = need < released ? need : released
+      // Hold the lowest gain over the window, then average it over the window: the gain glides
+      // down (no step, no distortion) and is fully down exactly when the peak comes out
+      const m = this.holdMin(this.env, w + 1)
+      this.sum += m - this.avg[this.avgPos]
+      this.avg[this.avgPos] = m
+      this.avgPos = (this.avgPos + 1) % w
+      const g = this.sum / w
+      let y = out * (1 + (g - 1) * this.amt.next(p.on ? 1 : 0))
+      if (p.on) {
+        // Safety net for rounding: never engages on a signal the gain already handled
+        if (y > ceil) y = ceil
+        else if (y < -ceil) y = -ceil
+        if (g < lowest) lowest = g
+      }
       buf[i] = y
-      if (this.g < lowest) lowest = this.g
     }
+    // Re-add the window so the running sum never drifts
+    let s = 0
+    for (let j = 0; j < w; j++) s += this.avg[j]
+    this.sum = s
     this.blockGr = p.on ? linToDb(lowest) : 0
-    if (!p.on) this.g = 1
+  }
+
+  /** Pushes v and returns the minimum of the last `span` values (≥ 1 when fewer were pushed) */
+  private holdMin(v: number, span: number): number {
+    const cap = this.qVal.length
+    // Values at the back that are not lower than v can never be the minimum again
+    while (this.qLen > 0 && this.qVal[(this.qHead + this.qLen - 1) % cap] >= v) this.qLen--
+    const at = (this.qHead + this.qLen) % cap
+    this.qVal[at] = v
+    this.qStep[at] = this.step
+    this.qLen++
+    if (this.qStep[this.qHead] <= this.step - span) {
+      this.qHead = (this.qHead + 1) % cap
+      this.qLen--
+    }
+    this.step++
+    return Math.min(1, this.qVal[this.qHead])
   }
 }

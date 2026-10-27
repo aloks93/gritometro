@@ -1,5 +1,5 @@
 import type { CompParams, DeEsserParams, GateParams, LimiterParams, SaturationParams } from './dynamics'
-import { LOOKAHEAD_MS } from './dynamics'
+import { dynamicsLatency } from './dynamics'
 import { noiseLatency, type NoiseParams } from './noise'
 import type { ChannelSetup } from './channels'
 import { responseDb, type Biquad } from '../studio/dsp'
@@ -1002,7 +1002,7 @@ export function processorWarnings(cfg: ProcessorConfig, outputLabel: string | nu
 
 /** Processing latency added on top of the audio devices', ms */
 export function processingLatencyMs(cfg: Pick<ProcessorConfig, 'noise'>, sampleRate = 48000): number {
-  return LOOKAHEAD_MS + (noiseLatency(cfg.noise.resolution) / sampleRate) * 1000
+  return ((dynamicsLatency(sampleRate) + noiseLatency(cfg.noise.resolution)) / sampleRate) * 1000
 }
 
 // ---- Files

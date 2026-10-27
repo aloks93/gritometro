@@ -29,7 +29,8 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
   data folder `%APPDATA%/Gritometro Procesador`. Released as `procesador-vX.Y.Z` with `--latest=false`.
 - **Gritómetro Plugin** (VST3 / CLAP, `plugin/`, Rust + nih-plug + egui, GPL-3.0): the processor inside a DAW. `plugin/src/dsp.rs` is a
   line-by-line port of `core/processor/dynamics.ts`, `noise.ts` and the EQ biquads — **a DSP change in TS needs the same
-  change in Rust**; `cargo test` (`plugin/tests/parity.rs`) compares the Rust chain against the app's output
+  change in Rust**; on top of the app, the Rust gate/de-esser/compressors/limiter are linked across channels (stereo
+  keeps its image) and the EQ, input/output gains glide for automation; `cargo test` (`plugin/tests/parity.rs`) compares the Rust chain against the app's output
   (`core/processor/pluginParity.ts`). Presets come from `presets.json` (all use × mic), preset files are the app's JSON.
   `editor.rs` draws the app's processor look (knobs, meters, flow, EQ with spectrum). Built by
   `.github/workflows/plugin.yml` (Windows + macOS universal) on `plugin-vX.Y.Z` releases. Locally on Windows: Rust gnu
@@ -64,7 +65,9 @@ src/renderer/src/
                    and DI/active/piezo pickups, `micsFor`/`selectUse`), auto setup; tuning.ts (instrument tuner:
                    tunings, nearest string, pitch smoother; pitch itself is YIN from studio/pitch.ts);
                    dynamics.ts (gate/expander with key filters, de-esser, compressor with sidechain HPF
-                   and auto makeup, saturator tube/tape/amp, look-ahead limiter) and noise.ts (STFT Wiener noise suppressor,
+                   and auto makeup, saturator tube/tape/amp oversampled 4× (linear-phase FIR, dry delayed to
+                   match), look-ahead true-peak limiter (min-hold + moving average, no clipping); every
+                   module fades on/off and glides knob moves via Smoother, denormals flushed per block) and noise.ts (STFT Wiener noise suppressor,
                    learned or adaptive profile), both shared with processor.worklet.ts; channels.ts (one
                    setup per device channel: switching channel stores the current one and restores the target)
     mixer/         pure mixer model: strips, buses, solo/mute, pan law, fader taper, EQ response,
