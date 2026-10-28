@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon: the processor icon on its own dark background (no white disc on the splash screen) -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/bg" />
+    <foreground android:drawable="@drawable/ic_launcher_fg" />
+</adaptive-icon>

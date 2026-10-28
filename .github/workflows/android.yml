@@ -1,0 +1,68 @@
+# Gritómetro Procesador de Audio Android (android/): when an android-vX.Y.Z release is published,
+# run the native DSP tests and build the APK. The APK is attached only when the signing key is in
+# the repository secrets (ANDROID_KEYSTORE_B64, ANDROID_KEYSTORE_PASSWORD): an APK signed with any
+# other key could not update the installed app.
+name: Android APK
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach to (android-vX.Y.Z)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: ${{ startsWith(github.event.release.tag_name || inputs.tag, 'android-') }}
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HAS_KEY: ${{ secrets.ANDROID_KEYSTORE_B64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: android/native
+
+      - name: NDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" > /dev/null
+
+      - name: Test (native DSP)
+        working-directory: android/native
+        run: cargo test --release
+
+      - name: Signing key
+        if: env.HAS_KEY == 'true'
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "GRIT_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          echo "GRIT_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease --no-daemon
+          VERSION="${TAG#android-v}"
+          cp app/build/outputs/apk/release/app-release.apk "../Gritometro-Procesador-Android-$VERSION.apk"
+
+      - name: Attach to the release
+        if: env.HAS_KEY == 'true'
+        run: gh release upload "$TAG" Gritometro-Procesador-Android-*.apk --clobber

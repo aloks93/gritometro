@@ -1,0 +1,21 @@
+[package]
+name = "gritometro_android"
+version = "1.0.0"
+edition = "2021"
+authors = ["Gritómetro"]
+license = "GPL-3.0-or-later"
+description = "Gritómetro Procesador de Audio Android: the plugin's DSP (plugin/src/dsp.rs) behind a JNI API"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+jni = { version = "0.21", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+opt-level = 3

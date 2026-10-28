@@ -37,6 +37,14 @@ It also has a **hidden Studio mode** (`settings.appMode = 'studio'`): a professi
   `.github/workflows/plugin.yml` (Windows + macOS universal) on `plugin-vX.Y.Z` releases. Locally on Windows: Rust gnu
   toolchain linked with llvm-mingw (`cargo xtask bundle gritometro_procesador --release`; `--features standalone` = window
   without a DAW).
+- **Gritómetro Procesador de Audio Android** (`android/`, Kotlin + Compose, GPL-3.0): the processor on a phone. `android/native`
+  is a Rust JNI library that includes `plugin/src/dsp.rs` as-is (`#[path]`), so DSP changes reach it for free; the chain
+  stays as the app's JSON (`native/src/chain.rs` mirrors the fields; a new chain field needs adding there). Live mic →
+  headphones with recording, files (decode anything, A/B, export WAV/M4A with LUFS target), tuner, recordings, presets
+  from `plugin/presets.json`, assistant ported from `autoSetup`. No routing to other apps (Android forbids it). Built
+  with `./gradlew assembleRelease` in `android/` (Gradle builds the Rust lib per ABI with the NDK clang); released as
+  `android-vX.Y.Z` with `--latest=false`, APK signed with the key in `~/.gritometro-keys` (never lose it: updates need
+  the same key). See `android/README.md`.
 - Studio improvements go to every edition; keep party-only wording out of the studio (`AudioScreen studio` prop).
 - Studio language (ES/EN, `prefs.language`, auto = system): the studio is written in Spanish and `ui/studio/i18n.ts`
   translates what it renders (MutationObserver), plus confirm(), PDF reports and CSVs. **New studio texts need an
