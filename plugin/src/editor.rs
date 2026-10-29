@@ -919,7 +919,9 @@ fn bands_strip(ui: &mut egui::Ui, setter: &ParamSetter, p: &ProcParams, st: &mut
                             });
                         })
                         .response;
-                    if resp.interact(Sense::click()).clicked() {
+                    // Any press on the card selects it; an interact() over the card would sit on top of
+                    // its LED, type menu and knobs and swallow their clicks
+                    if ui.rect_contains_pointer(resp.rect) && ui.input(|inp| inp.pointer.any_pressed()) {
                         st.sel_band = i;
                     }
                 });
