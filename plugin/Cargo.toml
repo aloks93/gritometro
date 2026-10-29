@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "gritometro_procesador"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2021"
 authors = ["Gritómetro"]
 license = "GPL-3.0-or-later"
