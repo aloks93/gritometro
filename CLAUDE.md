@@ -65,8 +65,9 @@ src/renderer/src/
                    Calibration (noise floor), ScoreEngine (scream score + SilenceWatcher),
                    ProcessorEngine (mic processor graph, processor.worklet.ts bundled via ?worker&url),
                    InputScanner (opens every input at once and meters each channel, for the Interfaces tab)
-    game/          GameMode contract, registry, modes/*
-    players/       players, teams, avatars, age handicap
+    game/          GameMode contract, registry, modes/*, leaderboard.ts (funny titles by score, TOP 10 = best per player)
+    players/       players (with badge code), teams, avatars, age handicap; roster.ts (guest list import from CSV/Excel,
+                   merge by code, badge lookup), xlsx.ts (minimal .xlsx reader, DecompressionStream, no library)
     settings/      game settings + defaults (appMode, birthdayName)
     processor/     mic processor: model, 8-band parametric EQ (exact Web Audio biquads), presets use × mic
                    (voice uses and instrument uses: bass, guitar, acoustic, drums (kick/snare/toms/hi-hat/
@@ -140,6 +141,9 @@ src/renderer/src/
 
 ## Notes
 - App icon (`build/icon.svg` → `build/icon.png`) is deliberately neutral/professional, because the same exe serves the studio mode. Do not make it kid-themed.
+- Badge play (`BadgeScreen`, route `badge`): guests type their employee code on a keypad, scream, and land in the
+  TOP 10 (`ui/components/Factory.tsx`: badge card, keypad, leaderboard with rank-up and new-leader effects). Power
+  modes show the same TOP 10 on the right. Records store `playerCode` and `title`; `target` mode screams never rank.
 - Theme art must be original (no Disney/Pixar logos or characters). Users can upload their own images per custom theme.
 - Electron does not support `window.prompt`; use inline inputs. `confirm()` works.
 - Verify UI changes by running the app; for automated screenshots launch Electron with `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`.

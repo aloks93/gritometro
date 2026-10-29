@@ -15,7 +15,8 @@ const api = {
     open: (extensions: string[]): Promise<string | null> => ipcRenderer.invoke('file:open', extensions),
     printPdf: (defaultName: string): Promise<string | null> => ipcRenderer.invoke('file:printPdf', defaultName),
     htmlToPdf: (defaultName: string, html: string): Promise<string | null> => ipcRenderer.invoke('file:htmlToPdf', defaultName, html),
-    openBinary: (extensions: string[]): Promise<{ name: string; base64: string }[] | null> => ipcRenderer.invoke('file:openBinary', extensions),
+    openBinary: (extensions: string[], filterName?: string): Promise<{ name: string; base64: string }[] | null> =>
+      ipcRenderer.invoke('file:openBinary', extensions, filterName),
     openPath: (path: string): Promise<string> => ipcRenderer.invoke('shell:openPath', path)
   },
   /** Multitrack recording streamed to disk (one WAV per track) */

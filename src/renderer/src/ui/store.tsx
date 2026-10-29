@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { defaultAudioSettings, type AudioSettings } from '../core/audio/AudioConfig'
-import type { Player } from '../core/players/players'
+import { screamTitle } from '../core/game/leaderboard'
+import { newId, type Player } from '../core/players/players'
+import { normalizeCode } from '../core/players/roster'
 import { defaultGameSettings, type GameSettings } from '../core/settings/settings'
 import { mergeMixer, type MixerConfig } from '../core/mixer/mixer'
 import { mergeProcessor, type ProcessorConfig } from '../core/processor/processor'
@@ -18,6 +20,32 @@ export interface RecordEntry {
   date: string
   /** Approximate dB SPL of the sustained peak */
   db?: number
+  /** Badge code at the time, so the ranking survives re-importing the guest list */
+  playerCode?: string
+  /** Funny title earned (screamTitle label) */
+  title?: string
+}
+
+/** History entry for one scored scream (title and badge code included) */
+export function screamRecord(player: Player, score: number, modeId: string, db?: number): RecordEntry {
+  return {
+    id: newId('r'),
+    playerId: player.id,
+    playerName: player.name,
+    playerCode: player.code,
+    score,
+    modeId,
+    date: new Date().toISOString(),
+    db,
+    title: screamTitle(score).label
+  }
+}
+
+/** Personal best of a player (by id, or by badge code across re-imports) */
+export function personalBest(records: RecordEntry[], player: Player): number | undefined {
+  const code = normalizeCode(player.code)
+  const mine = records.filter((r) => r.modeId !== 'target' && (r.playerId === player.id || (code && normalizeCode(r.playerCode) === code)))
+  return mine.length ? Math.max(...mine.map((r) => r.score)) : undefined
 }
 
 export interface AppData {

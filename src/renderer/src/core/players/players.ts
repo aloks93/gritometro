@@ -11,6 +11,8 @@ export interface Player {
   id: string
   name: string
   age?: number
+  /** Employee badge code typed on the keypad to identify the player */
+  code?: string
   avatar: AvatarSpec
   /** Optional photo/drawing uploaded by the user, data URL */
   photo?: string

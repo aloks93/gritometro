@@ -124,10 +124,10 @@ export async function saveHtmlAsPdf(name: string, html: string): Promise<string 
   return name
 }
 
-export async function openBinaryFiles(extensions: string[]): Promise<{ name: string; data: ArrayBuffer }[]> {
+export async function openBinaryFiles(extensions: string[], filterName?: string): Promise<{ name: string; data: ArrayBuffer }[]> {
   const a = api()
   if (a) {
-    const files = await a.file.openBinary(extensions)
+    const files = await a.file.openBinary(extensions, filterName)
     return (files ?? []).map((f) => ({ name: f.name, data: fromBase64(f.base64) }))
   }
   return new Promise((resolve) => {

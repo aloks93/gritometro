@@ -7,6 +7,7 @@ import type { Route } from './ui/nav'
 import { api } from './ui/storage'
 import { StoreProvider, useStore } from './ui/store'
 import { AudioScreen } from './ui/screens/AudioScreen'
+import { BadgeScreen } from './ui/screens/BadgeScreen'
 import { CustomizeScreen } from './ui/screens/CustomizeScreen'
 import { GameScreen } from './ui/screens/GameScreen'
 import { HomeScreen } from './ui/screens/HomeScreen'
@@ -96,6 +97,9 @@ function Shell(): JSX.Element {
   switch (route.name) {
     case 'players':
       screen = <PlayersScreen navigate={navigate} />
+      break
+    case 'badge':
+      screen = <BadgeScreen navigate={navigate} />
       break
     case 'modes':
       screen = <ModesScreen navigate={navigate} />

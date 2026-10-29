@@ -6,17 +6,17 @@ import { scoreScream, SilenceWatcher, SustainWatcher, type ScoreResult } from '.
 import { normalizeLevel } from '../../core/audio/LevelAnalyzer'
 import { getMode } from '../../core/game/registry'
 import type { Standing, Turn, TurnKind } from '../../core/game/GameMode'
-import { handicapFor, newId, type Player } from '../../core/players/players'
-import { levelLabel } from '../../themes/Theme'
+import { handicapFor, type Player } from '../../core/players/players'
 import { Meter, Reveal } from '../components/Meter'
 import { MonsterAvatar } from '../components/MonsterAvatar'
 import { ModeViewPanel, StandingsList } from '../components/ModeViews'
 import { Certificate } from '../components/Certificate'
 import { WinnerPhoto } from '../components/WinnerPhoto'
+import { Leaderboard, ScreamTitleBadge } from '../components/Factory'
 import { useEngineState, useKey, useLevel } from '../hooks'
 import type { GameSession, Navigate } from '../nav'
 import { useSounds } from '../sound'
-import { useStore } from '../store'
+import { screamRecord, useStore } from '../store'
 
 type Phase = 'ready' | 'countdown' | 'active' | 'result' | 'done'
 
@@ -63,6 +63,9 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
   const team = turn?.teamId ? ctx.teams.find((t) => t.id === turn.teamId) : undefined
   // Aiming at a target is about control, not power: no age bonus there
   const multiplier = turn?.target !== undefined ? 1 : handicapFor(player?.age, settings.handicapRules, settings.handicapEnabled)
+  // Power modes show the party-wide TOP 10 on the right; the mode's own table stays on the left
+  const showTop = mode.turnKind === 'scream' && mode.id !== 'target'
+  const confettiColors = useMemo(() => [theme.tokens.primary, theme.tokens.accent, theme.tokens.success], [theme])
   const bestRecord = useMemo(() => Math.max(0, ...data.records.map((r) => r.score)), [data.records])
 
   // Track the best level reached during the active window
@@ -89,18 +92,7 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
     })
     // The very first scream of the party isn't a "record" yet, and aiming at a target isn't about power
     const isRecord = data.records.length > 0 && score.score > bestRecord && t.target === undefined
-    update('records', (rs) => [
-      ...rs,
-      {
-        id: newId('r'),
-        playerId: p.id,
-        playerName: p.name,
-        score: score.score,
-        modeId: mode.id,
-        date: new Date().toISOString(),
-        db: Math.round(score.sustainedPeakDb + profile.splOffset)
-      }
-    ])
+    update('records', (rs) => [...rs, screamRecord(p, score.score, mode.id, Math.round(score.sustainedPeakDb + profile.splOffset))])
     finishTurn({ turn: t, value: score.score, score, isRecord })
   }
 
@@ -249,7 +241,7 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
         </div>
       </header>
 
-      <div className="game-layout">
+      <div className={`game-layout ${showTop ? 'with-top' : ''}`}>
         <aside className="game-side">
           {view && <ModeViewPanel view={view} />}
           <h3>Tabla</h3>
@@ -263,6 +255,7 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
               <div>
                 {turn?.label && <div className="muted">{turn.label}</div>}
                 <div className="turn-name">{player.name}</div>
+                {player.code && <div className="muted">Empleado Nº {player.code}</div>}
                 {team && <div className="turn-team">{team.name}</div>}
                 {multiplier !== 1 && turn?.kind === 'scream' && <div className="chip">Bonus x{multiplier} por edad</div>}
               </div>
@@ -330,7 +323,7 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
                         {last.turn.target !== undefined ? (
                           <p className="result-level">{targetVerdict(last.value, last.turn.target)}</p>
                         ) : (
-                          <p className="result-level">{levelLabel(theme, last.value)}</p>
+                          <ScreamTitleBadge score={last.value} />
                         )}
                         {settings.showDb && (
                           <p className="muted">
@@ -358,6 +351,12 @@ export function GameScreen({ session, navigate }: { session: GameSession; naviga
             </div>
           </div>
         </main>
+
+        {showTop && (
+          <aside className="game-side game-top">
+            <Leaderboard records={data.records} players={data.players} highlight={last?.turn.playerId} colors={confettiColors} />
+          </aside>
+        )}
       </div>
     </div>
   )

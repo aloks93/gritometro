@@ -1,8 +1,11 @@
+import { screamTitle } from '../../core/game/leaderboard'
 import { getMode } from '../../core/game/registry'
 import { Screen } from '../components/Layout'
 import type { Navigate } from '../nav'
 import { saveFile } from '../storage'
 import { useStore } from '../store'
+
+const modeName = (id: string): string => getMode(id)?.name ?? (id === 'badge' ? 'Turno con carnet' : id)
 
 export function RecordsScreen({ navigate }: { navigate: Navigate }): JSX.Element {
   const { data, update, theme } = useStore()
@@ -17,9 +20,17 @@ export function RecordsScreen({ navigate }: { navigate: Navigate }): JSX.Element
   )
 
   const exportCsv = (): void => {
-    const rows = [['Fecha', 'Jugador', 'Puntos', 'dB aprox', 'Reto']]
+    const rows = [['Fecha', 'Jugador', 'Carnet', 'Puntos', 'Título', 'dB aprox', 'Reto']]
     data.records.forEach((r) =>
-      rows.push([new Date(r.date).toLocaleString('es'), r.playerName, r.score.toFixed(1), String(r.db ?? ''), getMode(r.modeId)?.name ?? r.modeId])
+      rows.push([
+        new Date(r.date).toLocaleString('es'),
+        r.playerName,
+        r.playerCode ?? '',
+        r.score.toFixed(1),
+        r.title ?? screamTitle(r.score).label,
+        String(r.db ?? ''),
+        modeName(r.modeId)
+      ])
     )
     const csv = rows.map((row) => row.map((c) => `"${c.replace(/"/g, '""')}"`).join(';')).join('\r\n')
     // BOM so Excel opens accents correctly
@@ -50,6 +61,7 @@ export function RecordsScreen({ navigate }: { navigate: Navigate }): JSX.Element
               <th>#</th>
               <th>Jugador</th>
               <th>Mejor grito</th>
+              <th>Título</th>
               <th>dB aprox.</th>
               <th>Reto</th>
               <th>Hora</th>
@@ -63,8 +75,9 @@ export function RecordsScreen({ navigate }: { navigate: Navigate }): JSX.Element
                 <td>
                   <strong>{r.score.toFixed(1)}</strong>
                 </td>
+                <td>{screamTitle(r.score).emoji} {r.title ?? screamTitle(r.score).label}</td>
                 <td>{r.db ?? '—'}</td>
-                <td>{getMode(r.modeId)?.name ?? r.modeId}</td>
+                <td>{modeName(r.modeId)}</td>
                 <td>{new Date(r.date).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}</td>
               </tr>
             ))}

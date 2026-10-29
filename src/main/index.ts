@@ -117,11 +117,11 @@ function setupIpc(): void {
     }
   })
 
-  ipcMain.handle('file:openBinary', async (_e, extensions: string[]) => {
+  ipcMain.handle('file:openBinary', async (_e, extensions: string[], filterName = 'Audio') => {
     if (!mainWindow) return null
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Audio', extensions }]
+      filters: [{ name: filterName, extensions }]
     })
     if (canceled || filePaths.length === 0) return null
     return Promise.all(filePaths.map(async (p) => ({ name: basename(p), base64: (await fs.readFile(p)).toString('base64') })))

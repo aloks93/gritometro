@@ -51,6 +51,9 @@ export function HomeScreen({ navigate }: { navigate: Navigate }): JSX.Element {
           <button className="btn primary huge" onClick={() => navigate({ name: data.players.length ? 'modes' : 'players' })}>
             🎮 ¡Jugar!
           </button>
+          <button className="btn huge" onClick={() => navigate({ name: 'badge' })}>
+            🪪 Turno con carnet
+          </button>
         </div>
         <div className="home-grid">
           <button className="btn tile" onClick={() => navigate({ name: 'players' })}>

@@ -9,6 +9,7 @@ export interface GameSession {
 export type Route =
   | { name: 'home' }
   | { name: 'players' }
+  | { name: 'badge' }
   | { name: 'modes' }
   | { name: 'game'; session: GameSession }
   | { name: 'records' }
